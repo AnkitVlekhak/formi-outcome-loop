@@ -1,3 +1,4 @@
+[startup] tenant overrides: {"kestrel_finance": {"max_requests_per_24h": 2, "submit_from_hour": 11, "customer_facing_notice_minutes": 60, "auto_customer_facing_hours": [11, 19]}, "northwind_life": {"customer_facing_requires_approval": true}}
 [startup] history+catch-up ingested in 0.7s; sim at D0 00:00
 [D1 00:00] day done; credits=200.0 applied=6
 [D2 00:00] day done; credits=200.0 applied=7

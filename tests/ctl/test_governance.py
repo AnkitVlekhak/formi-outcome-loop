@@ -1,5 +1,6 @@
 """Builder + governance against the real simulator (in-process)."""
 import copy
+import json
 
 import pytest
 
@@ -210,3 +211,28 @@ def test_routine_approval_is_not_applied_over_a_pending_incident_fix(tmp_path):
         store.update_proposal(pid, 0, approval_id=aid)
     g._poll_approval(store.proposal("routine"), 100)
     assert store.proposal("routine")["state"] == "DEFERRED" and g.sim.applied == []
+
+
+# ---------------------------------------------------------------- tenant overrides file
+def test_default_overrides_file_loads_and_only_has_known_keys():
+    from controller.governance import load_overrides
+    o = load_overrides()
+    assert o["kestrel_finance"]["max_requests_per_24h"] == 2
+    assert o["northwind_life"] == {"customer_facing_requires_approval": True}
+
+
+@pytest.mark.parametrize("rules", [{"max_request_per_24h": 2},          # typo must not be ignored
+                                   {"max_requests_per_24h": True},       # bool is not an int here
+                                   {"submit_from_hour": "11"}])
+def test_bad_override_fails_fast(tmp_path, rules):
+    from controller.governance import load_overrides
+    f = tmp_path / "o.json"
+    f.write_text(json.dumps({"t": rules}))
+    with pytest.raises(ValueError):
+        load_overrides(f)
+
+
+def test_overrides_can_be_disabled(monkeypatch):
+    from controller.governance import load_overrides
+    monkeypatch.setenv("CTL_TENANT_OVERRIDES", "none")
+    assert load_overrides() == {}

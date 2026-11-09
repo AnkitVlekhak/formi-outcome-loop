@@ -1,0 +1,14 @@
+{
+  "_comment": "Per-tenant rules agreed with stakeholders that are STRICTER than the workflow policy the simulator enforces (SUBMISSION.md section 3). Loaded at startup by controller.governance.load_overrides; unknown keys or wrong types fail fast. Set CTL_TENANT_OVERRIDES to another file, or to 'none' to run on platform policy alone. A tenant not listed here gets plain policy.",
+  "kestrel_finance": {
+    "_source": "stakeholders/04 (Anita Desai): max 2 requests a day, nothing before 11:00, notice before changes on a running campaign",
+    "max_requests_per_24h": 2,
+    "submit_from_hour": 11,
+    "customer_facing_notice_minutes": 60,
+    "auto_customer_facing_hours": [11, 19]
+  },
+  "northwind_life": {
+    "_source": "stakeholders/02 (Meera Iyer): no customer-facing change without a named human approval",
+    "customer_facing_requires_approval": true
+  }
+}

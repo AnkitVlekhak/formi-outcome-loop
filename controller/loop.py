@@ -89,6 +89,8 @@ class Controller:
         self.gov = Governance(self.sim, self.store, self.infos, on_applied=self._on_applied,
                               affected=self._affected_leads)
         self.gov.locks = {k: set(v) for k, v in (self.store.meta_get("locks", {}) or {}).items()}
+        self.store.meta_set("tenant_overrides", self.gov.ovr)
+        self.log(f"[startup] tenant overrides: {json.dumps(self.gov.ovr) if self.gov.ovr else 'none'}")
         t0 = time.perf_counter()
         for c in self.sim.chunks("history", self.state.last_chunk):
             self.ing.ingest_text(c["chunk"], self.sim.chunk(c["chunk"]), "history")

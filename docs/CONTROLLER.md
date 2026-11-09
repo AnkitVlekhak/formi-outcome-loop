@@ -84,5 +84,5 @@ select * from did_status;
 
 - **New detector:** read the arrays on `State.wfs[wid]` (per-cell, per-hour counters). Write a `decisions` row with the inputs and the rule. Emit an intent with `Store.add_intent(...)`, giving it a patch op (`alloc`, `prompt`, `partition`, `hour_weights`), a priority (0 = incident … 5 = exploration) and evidence: `summary`, `rationale`, `dry_run`, `gain_per_day`. The builder and governance do the rest (batching, routing, gates, retries, audit).
 - **New counter:** add the array to `WfState.ARRAYS` and fill it in `Ingestor._flush`. Snapshots pick it up automatically.
-- **New stakeholder rule:** use `governance.OVERRIDES` (per tenant). Every override must be stricter than policy.
+- **New stakeholder rule:** add it to `config/tenant_overrides.json` (per tenant, with a `_source` line naming the memo or agreement). Supported keys are listed in `governance.OVERRIDE_KEYS`; a new kind of rule needs a key there plus the check that uses it. Every override must be stricter than policy. Startup logs the overrides in force and stores them in `meta.tenant_overrides`; `CTL_TENANT_OVERRIDES=<file>|none` swaps them.
 - **Thresholds:** each module documents its constants at the top. The evals in `tests/ctl/test_decide.py` assert their error rates; change a constant and the eval tells you what it cost.

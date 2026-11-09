@@ -6,13 +6,11 @@
 
 ## 0. TL;DR
 
-- **What it does:** an always-on controller ingests events into per-cell counters. It detects caller-ID degradation, hallucination spikes and KPI drift. It runs factorial welcome×voice experiments with deterministic stopping, holdouts and decay rollback, and fits per-cohort call-time weights from pre-D0 history. Every change goes out as one batched, evidenced proposal through approval or policy-permitted auto-apply.
-- **Results:**
-  - public_01: business outcome **+12.8%**, 0 harmful changes.
-  - public_02: business outcome **+27.3%**, 0 harmful changes. The bad prompt was fixed in **135 min** (detected 34 min after it shipped), and the flagged caller ID was off traffic within 2h 15m.
-  - public_03_load: **+20.6%**, 0 harmful of 76. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128 applied changes.
-- **Scale:** one simulated day of public_03_load takes **13.3 s** wall-clock against a 10-minute budget. Crash-safe under SIGKILL at 6 targeted points and at random moments.
-- **Not built:** per-person call time, cross-tenant fairness, a UI (there is a JSON supervisor view), and promoting winners across clients.
+1. **What it does:** an always-on controller that detects caller-ID degradation, hallucination spikes and KPI drift from per-cohort counters. It fits cohort call times from pre-D0 history, runs welcome×voice experiments with deterministic stopping and decay rollback, and sends every change as one batched, evidenced proposal through approval or policy-permitted auto-apply.
+2. **public_01:** business outcome **+12.8%**, 0 harmful changes. **public_02:** **+27.3%**, 0 harmful. The bad prompt was fixed in 135 min, and the flagged caller ID was off traffic in 2h 15m.
+3. **public_03_load:** **+20.6%**, 0 harmful of 76. A simulated day takes 13.3 s against a 600 s budget. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128.
+4. **Reliability:** SIGKILL at 6 targeted crash points plus random moments; the run still finishes with no lost or doubled approvals.
+5. **Not built:** per-person call time, cross-tenant fairness, a UI (there's a JSON supervisor view), and promoting winners across clients.
 
 ## 1. Assumptions
 
@@ -23,7 +21,7 @@
 5. The pre-D0 history ran the business default with no schedule. That makes it an unbiased (cohort × hour) pickup table, but it carries no welcome/voice variant evidence.
 6. A supervisor edit is a decision by the client. I lock the dimension they touched, stop experiments on it, and only revert it through an approval labelled "REVERTS A SUPERVISOR EDIT (with evidence)".
 7. One controller instance per simulator world. Running two writers against one state dir is out of scope; production would use a leader lease.
-8. The tenant ids in hidden scenarios match the public ones, for the stakeholder overrides. If they don't, policy defaults apply, so the controller is never *less* safe.
+8. The stakeholder agreements (Kestrel's 2 requests/day from 11:00, Northwind's approval for anything customer-facing) are keyed by tenant id in `config/tenant_overrides.json`. They're data, not code. Each one can only tighten policy, and a typo or unknown key stops startup. If a hidden scenario uses other tenant ids, plain policy applies, so the controller is never *less* safe. If it reuses these ids, Kestrel gets 2 requests a day instead of the 4 its policy allows. That's deliberate: the agreement was made with the client, not with a scenario.
 9. An expired proposal is a rejection (Product). Its intents are re-queued and **rebuilt from fresh data and the live config**, never resubmitted as-is.
 
 ## 2. Scope decisions
@@ -65,7 +63,7 @@
 
 ### 02 — Meera Iyer, Compliance (Northwind)
 - **Accepted, all of it:**
-  - Every customer-facing change on Northwind goes through approval (`OVERRIDES.northwind_life`).
+  - Every customer-facing change on Northwind goes through approval (`config/tenant_overrides.json` → `northwind_life`).
   - Prompt changes carry a validation run id plus our own observed flag rates.
   - The IRDAI question is answered by `ctl heard --lead N`: every call with its variant, config version, proposal, approver and rationale.
   - Approvals are timed inside 10–19 (KYC 10–18) and never sent when they'd expire overnight.
@@ -85,7 +83,7 @@
 
 ### 04 — Anita Desai, Ops Supervisor (Kestrel)
 - **Accepted:**
-  - ≤2 requests/day and nothing before 11:00 (stricter than policy's 4 from 10:00; `OVERRIDES.kestrel_finance`).
+  - ≤2 requests/day and nothing before 11:00 (stricter than policy's 4 from 10:00; `config/tenant_overrides.json` → `kestrel_finance`).
   - One batched request per slot.
   - Her prompt edits are never undone silently: a revert is a labelled, evidenced request she approves.
   - Customer-facing auto changes are announced and applied only after 60 min notice, inside 11–19.
@@ -261,8 +259,15 @@ auto:     STEPPING ─PUT ≤max_shift─► … ─► APPLIED;  live version m
 | D3 13:00 | confirmed (exact p = 3e-6 since the edit) → candidate P1 (own data, flag 1.5%, engagement 0.50) → validation 0.987 @ n=300 → proposal "REVERTS A SUPERVISOR EDIT (with evidence)" |
 | D3 13:45 | approved and applied (v10) — **MTTR 135 min** |
 | D3 17:00 | verified: flag rate back to baseline → RESOLVED |
+| D5 15:00 | supervisor sets `nw_renewal` voice to 100% V2 mid-experiment → v10. Voice is locked and the voice experiment stops. The welcome-message experiment keeps running on the supervisor's config |
+| D7 09:00 | daily look: W2's lift is fading (recent z −0.25) → arm dropped. The proposal is built **on v10**, so it keeps the supervisor's V2 voice |
+| D7 11:30 | approved at 11:08, applied as v11 (welcome W1 100%, voice V2 untouched) |
+
+The grader lists the D5 edit without an MTTR. It's a client decision, not an incident, so nothing was "fixed". The test is that it survived: v11 still has V2 (`sqlite3 state/public_02_incidents/ctl.db "select version, actor, dims from config_versions where workflow_id='nw_renewal'"`).
 
 ## 8. Scale (public_03_load, 12 workflows, ~800k events/day, M-series laptop)
+
+Measured on an Apple M-series laptop, not the 4-vCPU / 8 GB Linux grading box. The controller is single-process and uses one core, so core count doesn't matter. Per-core speed on a typical cloud vCPU is perhaps 1.5–2× slower. At that rate a simulated day would take ~20–30 s against the 600 s budget, and memory (686 MB peak) is unaffected. I haven't measured it on Linux.
 
 | sim day | events | wall s (whole tick loop) | of which simulator advance | controller ingest | controller decide+govern | snapshot | ingest events/s |
 |---|---|---|---|---|---|---|---|
@@ -421,8 +426,9 @@ Prompt incident MTTR 135 min (fixed by `controller_approved`); flagged caller-ID
   - Prompt fixes on low-volume KYC (2,805 min in the slowest variant): detection of a mild ~2× flag-rate shift and KYC's 2-requests/day budget.
   - Flagged caller IDs on KYC keep dialling old campaigns (`next_campaign_only`).
 - **Engagement as a guardrail:**
-  - KYC engagement moved within ±2.3% relative on all runs, i.e. well within the 0.02 absolute guardrail.
-  - public_02 `nw_renewal` engagement −0.6%, while its pickup rose 8% and conclusions 8%.
+  - KYC engagement (its guardrail) moved between −2.8% and +6.9% relative across all runs. The worst case is variant_005 `nw_kyc`: 0.575 vs 0.592, i.e. **−0.017 absolute against a 0.02 limit**. That's inside the guardrail, but it used 84% of the budget, closer than I'd like. The likely cause is pickup-driven dilution (known weakness 5): pickup rose 15% there, which brings in less-engaged people. I haven't isolated it.
+  - public_02: `nw_kyc` engagement −0.5% and `nw_renewal` −0.1% relative, while their pickup rose 20% and 11% and conclusions 21% and 12%.
+- **Hallucinated calls on public_03 rose in count** (5,188 vs 4,667), but the rate per connected call didn't (5.91 vs 5.98 per 1,000). Dials are identical (3.24M), so the extra flagged calls come from more people picking up, not from a worse prompt. Per workflow the rate ranges from −0.5 to +0.5 per 1,000.
 - **What I'd change next:** start challengers at 5% with harm-gated ramp-up to cut exploration harm, and pre-commit a prompt-rollback path for KYC so it doesn't compete for the 2-request budget.
 
 
@@ -441,10 +447,10 @@ Prompt incident MTTR 135 min (fixed by `controller_approved`); flagged caller-ID
 
 ## 13. Known weaknesses
 
-1. **Exploration can be judged harmful.** With random truths, about 1 in 6 scenarios has an exploration bundle whose expected engagement falls >1%, from bad arms at 10% each. Measured: 3 harmful of 132 changes across the variants. A smaller start share would cut that but slow learning further.
+1. **Exploration can be judged harmful.** With random truths, about 1 in 6 scenarios has an exploration bundle whose expected engagement falls >1%, from bad arms at 10% each. Measured: 2 harmful of 128 changes across the six variants (variant_003 and variant_005). A smaller start share would cut that but slow learning further.
 2. **Dev-volume power.** Experiments rarely conclude within 8–10 days. Most experiment value appears at load volume. Cohort-level winners almost never qualify at dev scale.
 3. **Caller ID:** "burned by our own volume" and "spam-flagged" aren't distinguished. A flagged number is retired for the rest of the run, even if it would recover.
-4. **KYC (`next_campaign_only`):** allocation changes, caller-ID retirement included, only reach new campaigns. A flagged number keeps dialling old campaigns for up to 3 days (variant_003: 56% next day).
+4. **KYC (`next_campaign_only`):** allocation changes, caller-ID retirement included, only reach new campaigns. A flagged number keeps dialling old campaigns for up to 3 days (variant_003: 58% next day).
 5. **Call-level engagement dilution.** Higher pickup re-connects people who previously didn't engage. Small (measured ~0.1pp) but real.
 6. **Slow detection for mild prompt issues.** A bad prompt at ~2× baseline on a low-volume workflow can take 6–20h to detect.
 7. **Credits re-spend after a crash.** An in-flight validation may run twice; the API has no idempotency key for it.

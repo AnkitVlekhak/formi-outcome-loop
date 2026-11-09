@@ -21,6 +21,8 @@ workflow. All ids are deterministic so a crash can never double-submit.
 from __future__ import annotations
 
 import json
+import os
+from pathlib import Path
 
 from . import builder, configops, crashpoint
 from .simclient import SimError
@@ -28,19 +30,49 @@ from .timeutil import MIN_PER_DAY, hour_of, next_working
 
 IN_FLIGHT = ("SUBMITTING", "PENDING", "APPROVED", "STEPPING")
 
-# Stakeholder agreements that are stricter than the platform policy (see SUBMISSION.md §3).
-OVERRIDES = {
-    "kestrel_finance": {"max_requests_per_24h": 2, "submit_from_hour": 11,
-                        "customer_facing_notice_minutes": 60, "auto_customer_facing_hours": [11, 19]},
-    "northwind_life": {"customer_facing_requires_approval": True},
+# Stakeholder agreements that are stricter than the platform policy live in data, not code
+# (config/tenant_overrides.json, see SUBMISSION.md §3). Each key can only tighten policy:
+# the request limit is min()-ed, the submit hour max()-ed, the rest only add gates.
+DEFAULT_OVERRIDES_PATH = Path(__file__).resolve().parents[1] / "config" / "tenant_overrides.json"
+OVERRIDE_KEYS = {
+    "max_requests_per_24h": int,              # min(policy, this)
+    "submit_from_hour": int,                  # max(approver_hours[0], this)
+    "customer_facing_notice_minutes": int,    # announce, then wait this long before auto-applying
+    "auto_customer_facing_hours": list,       # [lo, hi) hours in which announced auto changes may land
+    "customer_facing_requires_approval": bool,  # welcome/voice/prompt never auto-apply
 }
+
+
+def load_overrides(path: str | Path | None = None) -> dict:
+    """Read and validate the tenant overrides file. Fails fast on unknown keys or wrong types,
+    so a typo can't silently loosen a client's agreement. CTL_TENANT_OVERRIDES=none disables."""
+    path = path or os.environ.get("CTL_TENANT_OVERRIDES") or DEFAULT_OVERRIDES_PATH
+    if str(path).lower() == "none":
+        return {}
+    raw = json.loads(Path(path).read_text())
+    out = {}
+    for tenant, rules in raw.items():
+        if tenant.startswith("_"):
+            continue
+        clean = {}
+        for k, v in rules.items():
+            if k.startswith("_"):
+                continue
+            if k not in OVERRIDE_KEYS:
+                raise ValueError(f"{path}: unknown override {tenant}.{k}; allowed: {sorted(OVERRIDE_KEYS)}")
+            if not isinstance(v, OVERRIDE_KEYS[k]) or (OVERRIDE_KEYS[k] is int and isinstance(v, bool)):
+                raise ValueError(f"{path}: {tenant}.{k} must be {OVERRIDE_KEYS[k].__name__}, got {v!r}")
+            clean[k] = v
+        out[tenant] = clean
+    return out
+
 REJECT_BACKOFF = {"fatigue": 6 * 60, "judgement": 12 * 60, "default": 2 * 60}
 
 
 class Governance:
     def __init__(self, sim, store, infos: dict, overrides=None, on_applied=None, affected=None):
         self.sim, self.store, self.infos = sim, store, infos
-        self.ovr = OVERRIDES if overrides is None else overrides
+        self.ovr = load_overrides() if overrides is None else overrides
         self.on_applied = on_applied or (lambda p, v, now: None)
         self.affected = affected or (lambda wid, mask, nco: 0)
         self.locks: dict[str, set] = {}

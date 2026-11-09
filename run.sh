@@ -3,6 +3,7 @@
 # No Docker needed: Python 3.11+ with `pip install -r requirements.txt` (adds orjson only).
 # State (SQLite + snapshot) lives in $CTL_STATE_DIR (default ./state). Re-running the same command
 # after a crash resumes; a new simulator world is detected and the old state is archived.
+# Stakeholder rules stricter than policy: config/tenant_overrides.json (CTL_TENANT_OVERRIDES=<file>|none).
 set -euo pipefail
 SIM_URL="${1:?usage: ./run.sh <SIM_URL>}"
 cd "$(dirname "$0")"
