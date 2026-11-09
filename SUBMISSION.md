@@ -55,12 +55,13 @@
 - **Declined:**
   - A blended score: pickup and engagement stay separate (non-negotiable 3 / Product).
   - "Winner by lunch, live for everyone by evening": a winner needs ≥2 days, ≥400 connected calls per arm and z ≥ 2.9. Kestrel moves at most 0.2 total-variation per auto change.
-  - Rolling out "persuasive" P4 everywhere.
+  - Rolling out "persuasive" P4 everywhere. Prompt changes go through validation and approval like any other change.
 - **Wrong claims:**
   - "Kestrel turned on auto-apply for everything": prompts are **not** in `allowed_dims`, and every auto change is capped at `max_shift 0.2`.
   - "Northwind is fine with auto-apply on KYC": `nw_kyc.auto_apply.enabled: false`.
-  - P4 hallucinates at ~2.5%. Its validation pass rate sits on the 0.97 bar (expected ~0.9725), so it passes small runs by luck. My lower-bound rule rejects it.
-- **Reply:** "Nikhil — you'll get a per-client lift number, pickup and engagement shown separately (blending them hides which lever worked). Kestrel's caller-ID, timing and opener/voice changes already go live without waiting, within their policy limits. Prompts aren't auto-approvable for anyone, and Northwind KYC has auto-apply off in its signed policy. 'Persuasive' hallucinates about 4× our current prompt and barely scrapes validation, so it won't ship to regulated clients. Winners need two days of evidence; a one-day 'winner' is wrong about 1 time in 5 at our volumes."
+  - "Wherever it's available": P4 is only in the catalog for `nw_renewal` and `ks_cancel`, not `nw_kyc` (`GET /workflows` → `prompt_catalog`).
+  - "Tested well": the only safety signal the API gives is `/validation/runs`. I measured it on a throwaway simulator (not part of any graded run). P4 failed 91 of 4,000 conversations (2.3%), against 24 of 2,000 for P1 (1.2%). That's about twice the failure rate, and only just over the 0.97 bar: one of five n=300 runs came in at 0.967. The controller requires the one-sided 95% Wilson lower bound to clear the bar. At P4's rate the bound is 0.953 at n=300 and 0.968 at the one allowed escalation to n=1000, so P4 fails.
+- **Reply:** "Nikhil — you'll get a per-client lift number, pickup and engagement shown separately (blending them hides which lever worked). Kestrel's caller ID and timing go live without an approval round, and opener/voice changes go live after a 60-minute heads-up to their supervisor. No client's policy lets prompts skip approval, and Northwind KYC has auto-apply off. 'Persuasive' fails safety validation twice as often as the current prompt, so it won't ship to regulated clients. Winners need two days: peeking hourly for one day picks a false 'winner' 3 times in 10, and our rule under 5%."
 
 ### 02 — Meera Iyer, Compliance (Northwind)
 - **Accepted, all of it:**

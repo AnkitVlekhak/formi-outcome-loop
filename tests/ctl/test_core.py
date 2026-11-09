@@ -118,6 +118,23 @@ def test_aa_false_winner_rate_under_threshold():
     assert false_wins / trials < 0.05
 
 
+
+def test_aa_naive_same_day_winner_is_unreliable():
+    """What Sales asked for ("winning by lunch, live by evening"): one day of the same A/A traffic,
+    peeked hourly at z>=1.96. Picks a false winner far too often (~29%), which is why we don't."""
+    rng = np.random.default_rng(7)
+    trials, false_wins = 2000, 0
+    for _ in range(trials):
+        inc = np.zeros(2); ch = np.zeros((3, 2))
+        for _hour in range(10):
+            inc += [rng.binomial(70, 0.5), 70]
+            for a in range(3):
+                ch[a] += [rng.binomial(11, 0.5), 11]
+            if any(stats.two_prop_z(ch[a][0], ch[a][1], inc[0], inc[1]) >= 1.96 for a in range(3)):
+                false_wins += 1
+                break
+    assert false_wins / trials > 0.2
+
 # ---------------------------------------------------------------- config ops
 BASE = {"cohorts": [], "allocations": {"default": {"welcome_message": {"W1": 1.0}, "voice": {"V1": 1.0},
                                                    "caller_id": {"D1": 0.5, "D2": 0.5}}},
