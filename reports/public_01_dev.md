@@ -4,14 +4,14 @@
 
 | workflow | conclusion rate | Δ | pickup | Δ | engagement | Δ | engagement gap captured | hallucinated calls (base) |
 |---|---|---|---|---|---|---|---|---|
-| ks_cancel | 0.386 | +13.0% | 0.259 | +6.0% | 0.521 | +5.9% | 24% | 74 (57) |
-| nw_kyc | 0.456 | +24.4% | 0.293 | +21.1% | 0.607 | +1.7% | 7% | 36 (21) |
-| nw_renewal | 0.448 | +7.5% | 0.281 | +6.3% | 0.543 | +0.3% | 7% | 50 (54) |
-| ALL | 0.421 | +13.3% | 0.273 | +8.9% | 0.547 | +3.2% | 13% | 160 (132) |
+| ks_cancel | 0.383 | +12.1% | 0.259 | +5.7% | 0.518 | +5.4% | 23% | 62 (57) |
+| nw_kyc | 0.449 | +22.5% | 0.290 | +19.8% | 0.605 | +1.4% | 7% | 31 (21) |
+| nw_renewal | 0.450 | +8.1% | 0.278 | +5.4% | 0.551 | +1.7% | 9% | 44 (54) |
+| ALL | 0.419 | +12.8% | 0.271 | +8.2% | 0.548 | +3.4% | 14% | 137 (132) |
 
 ## Changes applied by the controller
 
-21 applied — neutral: 9, beneficial: 12
+23 applied — neutral: 10, beneficial: 13
 
 - nw_renewal v2 (controller_auto) dims=['caller_id'] engageΔ=+0.000 didΔ=-0.011 → **neutral**
 - ks_cancel v2 (controller_approved) dims=['cohorts', 'welcome_message', 'voice', 'caller_id', 'schedule'] engageΔ=+0.002 didΔ=+0.008 → **neutral**
@@ -25,30 +25,32 @@
 - ks_cancel v6 (controller_auto) dims=['welcome_message'] engageΔ=+0.010 didΔ=+0.000 → **beneficial**
 - nw_renewal v6 (controller_approved) dims=['welcome_message', 'voice'] engageΔ=+0.015 didΔ=+0.000 → **beneficial**
 - nw_kyc v3 (controller_approved) dims=['caller_id'] engageΔ=+0.000 didΔ=+0.363 → **beneficial**
-- ks_cancel v7 (controller_auto) dims=['voice'] engageΔ=+0.000 didΔ=+0.000 → **neutral**
+- ks_cancel v7 (controller_auto) dims=['voice'] engageΔ=-0.008 didΔ=+0.000 → **neutral**
+- nw_renewal v7 (controller_approved) dims=['welcome_message', 'voice'] engageΔ=-0.008 didΔ=+0.000 → **neutral**
 - nw_kyc v4 (controller_approved) dims=['caller_id'] engageΔ=+0.000 didΔ=-0.000 → **neutral**
-- ks_cancel v8 (controller_auto) dims=['voice'] engageΔ=+0.017 didΔ=+0.000 → **beneficial**
-- ks_cancel v9 (controller_auto) dims=['voice'] engageΔ=+0.017 didΔ=+0.000 → **beneficial**
-- ks_cancel v10 (controller_auto) dims=['voice'] engageΔ=+0.016 didΔ=+0.000 → **beneficial**
-- ks_cancel v11 (controller_auto) dims=['voice'] engageΔ=+0.008 didΔ=+0.000 → **neutral**
-- nw_renewal v7 (controller_approved) dims=['welcome_message', 'voice'] engageΔ=+0.005 didΔ=+0.000 → **neutral**
-- nw_renewal v8 (controller_approved) dims=['voice'] engageΔ=-0.001 didΔ=+0.000 → **neutral**
-- ks_cancel v12 (controller_auto) dims=['welcome_message'] engageΔ=-0.003 didΔ=+0.000 → **neutral**
+- ks_cancel v8 (controller_auto) dims=['welcome_message', 'voice'] engageΔ=+0.016 didΔ=+0.000 → **beneficial**
+- ks_cancel v9 (controller_auto) dims=['welcome_message', 'voice'] engageΔ=+0.016 didΔ=+0.000 → **beneficial**
+- ks_cancel v10 (controller_auto) dims=['welcome_message', 'voice'] engageΔ=+0.016 didΔ=+0.000 → **beneficial**
+- ks_cancel v11 (controller_auto) dims=['welcome_message', 'voice'] engageΔ=+0.015 didΔ=+0.000 → **beneficial**
+- nw_renewal v8 (controller_approved) dims=['welcome_message'] engageΔ=+0.005 didΔ=+0.000 → **neutral**
+- ks_cancel v12 (controller_auto) dims=['welcome_message', 'voice'] engageΔ=+0.003 didΔ=+0.000 → **neutral**
+- nw_renewal v9 (controller_approved) dims=['voice'] engageΔ=+0.000 didΔ=+0.000 → **neutral**
+- nw_kyc v5 (controller_approved) dims=['welcome_message', 'caller_id'] engageΔ=+0.008 didΔ=+0.015 → **neutral**
 
 ## Governance
 
 ```
 {
-  "approval_requests": 15,
+  "approval_requests": 14,
   "decisions": {
-    "approved": 9,
-    "rejected": 5,
+    "approved": 11,
+    "rejected": 3,
     "expired": 0
   },
   "rejection_reasons": {
-    "approver declined (judgement call)": 5
+    "approver declined (judgement call)": 3
   },
-  "applied_via_approval": 8,
+  "applied_via_approval": 10,
   "auto_applied": 13,
   "auto_apply_rejected": 0,
   "apply_conflicts": 1,
@@ -73,10 +75,10 @@
 {
   "nw_renewal:welcome_message=W3": {
     "3": 0.195,
-    "4": 0.198,
-    "5": 0.197,
-    "6": 0.187,
-    "7": 0.209
+    "4": 0.068,
+    "5": 0.0,
+    "6": 0.0,
+    "7": 0.0
   }
 }
 ```

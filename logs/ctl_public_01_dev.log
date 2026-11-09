@@ -3,23 +3,17 @@
 [D2 00:00] day done; credits=200.0 applied=7
 [D3 00:00] day done; credits=200.0 applied=8
 [D4 00:00] day done; credits=200.0 applied=11
-[D5 00:00] day done; credits=200.0 applied=12
-[D6 00:00] day done; credits=200.0 applied=15
-[D7 00:00] day done; credits=200.0 applied=16
-[D8 00:00] day done; credits=200.0 applied=17
+[D5 00:00] day done; credits=200.0 applied=13
+[D6 00:00] day done; credits=200.0 applied=16
+[D7 00:00] day done; credits=200.0 applied=19
+[D8 00:00] day done; credits=200.0 applied=19
 {
   "proposals": {
-    "APPLIED": 17,
-    "PENDING": 1,
-    "REJECTED": 5,
+    "APPLIED": 19,
+    "REJECTED": 3,
     "STALE": 1
   },
-  "incidents": [
-    [
-      "inc-ks_cancel-260980",
-      "FALSE_ALARM"
-    ]
-  ],
+  "incidents": [],
   "experiments": [
     [
       "nw_renewal:welcome_message:1",

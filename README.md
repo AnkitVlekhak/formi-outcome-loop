@@ -1,3 +1,10 @@
+> **Submission (Ankit Lekhak):** the controller lives in `controller/`; start with **[SUBMISSION.md](SUBMISSION.md)**
+> (design, decisions, results) and **[docs/CONTROLLER.md](docs/CONTROLLER.md)** (run, debug, extend).
+> Quick start: `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && make test`, then
+> `make run SCENARIO=scenarios/public_02_incidents.yaml`. Reports: `reports/`. Evals: `evals/` and `tests/ctl/`.
+
+---
+
 # Outcome-First Agent Loop — Senior Engineer Assignment
 
 **Formi · Agentic Universe** · Greenfield · Suggested effort 12–16 hours across 7 calendar days
