@@ -64,12 +64,13 @@ class Governance:
         if not start * 60 <= mod < hi * 60:
             return False, f"outside submission hours [{start},{hi})"
         lo_lat, hi_lat = g["approver_latency_minutes"]
-        # urgent fixes accept a small expiry risk (median latency); routine changes use the worst case
-        lat = (lo_lat + hi_lat) // 2 if urgent else hi_lat
+        # urgent fixes go out if a same-day decision is possible at all (an expiry costs one request,
+        # waiting overnight costs a day of harm); routine changes must be safe in the worst case
+        lat = lo_lat if urgent else hi_lat
         ttl = g["proposal_ttl_hours"] * 60
         worst = next_working(now + lat, g["approver_hours"])
         if worst > now + ttl:
-            return False, f"{'median' if urgent else 'worst-case'} decision {worst - now}min after submit exceeds TTL {ttl}min"
+            return False, f"{'best-case' if urgent else 'worst-case'} decision {worst - now}min after submit exceeds TTL {ttl}min"
         used = self.store.approvals_submitted_since(wid, now - MIN_PER_DAY)
         lim = self.request_limit(wid)
         budget = lim if urgent else max(lim - 1, 1) if lim >= 2 else lim
@@ -234,6 +235,16 @@ class Governance:
             return
         decided = a.get("decided_at")
         if st == "approved":
+            mine = self.store.intents_by_ids(p["intent_ids"])
+            if all(i["priority"] > 0 for i in mine):
+                urgent = [q for q in self.store.proposals(wid, ["PENDING", "APPROVED", "SUBMITTING"])
+                          if q["proposal_id"] != pid and q["base_version"] == p["base_version"]
+                          and any(i["priority"] == 0 for i in self.store.intents_by_ids(q["intent_ids"]))]
+                if urgent:
+                    # applying this would make the pending incident fix stale (same base version)
+                    return self._close(pid, "DEFERRED", now, reopen_after=0,
+                                       reasons=[f"not applied: incident fix {urgent[0]['proposal_id']} pending "
+                                                f"on the same base version takes precedence"])
             self.store.update_proposal(pid, now, state="APPROVED", reasons=a.get("reasons") or [])
             try:
                 r = self.sim.post(f"/workflows/{wid}/apply", {"approval_id": p["approval_id"]})

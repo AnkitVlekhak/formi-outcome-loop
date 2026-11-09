@@ -169,3 +169,44 @@ def test_urgent_gate_uses_median_latency(sim01, tmp_path):
     g = Governance(sim01, Store(tmp_path / "g.db"), _infos(sim01))
     assert g.gate("ks_cancel", 17 * 60)[0] is False
     assert g.gate("ks_cancel", 17 * 60, urgent=True)[0] is True
+
+
+def test_urgent_gate_accepts_a_reasonable_chance_today(tmp_path):
+    """variant_001: latency [60,240], incident at 16:45 — ~40% chance of a same-day decision beats
+    a guaranteed overnight wait (an expiry only costs one request)."""
+    info = {"ks_cancel": {"tenant_id": "kestrel_finance", "governance": {
+        "approver_hours": [10, 19], "approver_latency_minutes": [60, 240], "proposal_ttl_hours": 12,
+        "max_requests_per_24h": 4, "auto_apply": {"enabled": True, "allowed_dims": [], "max_shift": 0.2}}}}
+    g = Governance(None, Store(tmp_path / "g.db"), info)
+    t = 4 * 1440 + 16 * 60 + 45
+    assert g.gate("ks_cancel", t)[0] is False
+    assert g.gate("ks_cancel", t, urgent=True)[0] is True
+
+
+class _FakeSim:
+    def __init__(self):
+        self.applied = []
+
+    def approval(self, aid):
+        return {"approval_id": aid, "status": "approved", "decided_at": "x", "reasons": []}
+
+    def post(self, path, body):
+        self.applied.append(body)
+        return {"version": 9}
+
+    def config(self, wid):
+        return {"version": 9, "actor": "controller_approved", "config": {}}
+
+
+def test_routine_approval_is_not_applied_over_a_pending_incident_fix(tmp_path):
+    """variant_006: a routine change applied first made the incident fix stale and burned the day's budget."""
+    store = Store(tmp_path / "g.db")
+    g = Governance(_FakeSim(), store, {"wf": {"tenant_id": "t", "governance": {"apply_window_hours": 2}}})
+    for pid, prio, aid in (("routine", 3, "apr_1"), ("fix", 0, "apr_2")):
+        d = store.add_decision("k", "wf", 0, pid, "r", {}, "o")
+        iid = store.add_intent("wf", "incident" if prio == 0 else "callerid", pid, prio, {"op": "prompt"}, {}, d, 0)
+        store.add_proposal({"proposal_id": pid, "workflow_id": "wf", "base_version": 3, "route": "approval",
+                            "state": "PENDING", "target": {}, "request": {}, "intent_ids": [iid], "minute": 0})
+        store.update_proposal(pid, 0, approval_id=aid)
+    g._poll_approval(store.proposal("routine"), 100)
+    assert store.proposal("routine")["state"] == "DEFERRED" and g.sim.applied == []

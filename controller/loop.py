@@ -506,7 +506,7 @@ class Controller:
 
     def _window_rate(self, ws, now, hours=3, since=None):
         hi = self.state.hour_idx(now)
-        lo = self.state.hour_idx(since) + 1 if since is not None else hi - hours
+        lo = self.state.hour_idx(since) if since is not None else hi - hours
         k = ws.kpi_h[max(lo, 0):hi].sum(0)
         return int(k[1]), int(k[3])
 
@@ -517,16 +517,15 @@ class Controller:
         P = ws.opt["prompt_version"]
         totals = ws.prompt.sum(axis=0)
         if st == "DETECTED":
-            changes = [e["minute"] for e in ws.config_events
-                       if e["minute"] >= now - 2 * MIN_PER_DAY and "prompt_version" in e["dims"]]
-            recent_prompt_change = bool(changes)
-            # confirm over the window since the suspected change point (the latest prompt change if
-            # recent), never less than 3h — CUSUM's own estimate of where the shift began
+            # Hypothesis under test: "the prompt that is live now is worse than baseline". So confirm
+            # over everything since that prompt went live; with no prompt change, the last 3 hours.
+            changes = [e["minute"] for e in ws.config_events if "prompt_version" in e["dims"]]
             since = max(changes) if changes else None
-            if since is not None and self.state.hour_idx(now) - self.state.hour_idx(since) < 3:
-                since = None
+            recent_prompt_change = since is not None and since >= now - 3 * MIN_PER_DAY
             conn, flags = self._window_rate(ws, now, since=since)
             pval = incidents.confirm_p(flags, conn, p0)
+            # a fresh prompt change is a known risk event (higher prior), so the bar is lower
+            bar = incidents.CONFIRM_P_AFTER_CHANGE if recent_prompt_change else incidents.CONFIRM_P
             cur_i = P.index(cur_prompt)
             cur_rate = totals[cur_i][2] / max(totals[cur_i][0], 1)
             inc["evidence"].update({"confirm_window_conn": conn, "confirm_window_flags": flags,
@@ -536,12 +535,12 @@ class Controller:
             if conn < 100:
                 self.store.upsert_incident(inc, now)
                 return
-            if pval >= incidents.CONFIRM_P:
+            if pval >= bar:
                 inc["state"] = "FALSE_ALARM"
                 self.store.upsert_incident(inc, now)
                 self.store.add_decision("incident_close", wid, now, inc["incident_id"],
-                                        f"not confirmed: exact binomial tail p>={incidents.CONFIRM_P} over the "
-                                        f"change window", inc["evidence"], "false_alarm")
+                                        f"not confirmed: exact binomial tail p>={bar} since the live prompt "
+                                        f"started", inc["evidence"], "false_alarm")
                 return
             if not (recent_prompt_change or cur_rate >= 2 * p0):
                 inc["state"] = "ESCALATED"
@@ -640,7 +639,7 @@ class Controller:
                 self.store.cancel_intents(wid, "incident", f"prompt:{inc['incident_id']}", now)
             return
         if st == "VERIFYING":
-            conn, flags = self._window_rate(ws, now, since=inc["applied_minute"])
+            conn, flags = self._window_rate(ws, now, since=inc["applied_minute"] + 60)  # post-fix hours only
             if conn >= incidents.VERIFY_MIN_CONN:
                 rate = flags / conn
                 if rate <= incidents.VERIFY_OK_RATIO * p0:

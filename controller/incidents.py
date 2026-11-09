@@ -39,7 +39,8 @@ def confirm_p(flags: int, conn: int, p0: float) -> float:
     return min(tail, 1.0)
 
 
-CONFIRM_P = 1e-3
+CONFIRM_P = 1e-3              # no recent prompt change: strict
+CONFIRM_P_AFTER_CHANGE = 1e-2  # live prompt changed in the last 72h: the CUSUM alarm + this is enough
 
 
 def known_good(prompts, prompt_counts, p0: float, exclude=()) -> list[dict]:
