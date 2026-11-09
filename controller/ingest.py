@@ -23,7 +23,7 @@ from .state import MAX_EXP_DAYS, State
 from .store import Store
 from .timeutil import FastTs
 
-WATCH_MINUTES = 360
+WATCH_MINUTES = 48 * 60   # heightened sensitivity for 48h after a supervisor prompt edit (confirmation still gates action)
 
 
 def _num(s: str) -> int:

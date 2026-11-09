@@ -122,5 +122,5 @@ def test_supervisor_config_change_is_recorded(env):
           "event_id": 7}
     ing.ingest_text(0, _chunk([ev]), kind="events")
     assert state.wfs["wf1"].supervisor_events[0]["dims"] == ["prompt_version"]
-    assert state.wfs["wf1"].cusum["watch_until"] == 11 * 60 + 30 + 360
+    assert state.wfs["wf1"].cusum["watch_until"] == 11 * 60 + 30 + 48 * 60
     assert store.conn.execute("select actor from config_versions where version=2").fetchone()[0] == "supervisor"

@@ -190,7 +190,7 @@ class Controller:
                 s = max(0.0, s + (hit if x else miss))
                 smax = max(smax, s)
             h = max(5.0, 1.3 * smax)
-            ws.cusum.update({"p0": p0, "p1": p1, "h": h, "h_watch": max(3.5, 0.7 * h), "S": 0.0,
+            ws.cusum.update({"p0": p0, "p1": p1, "h": h, "h_watch": max(3.0, 0.6 * h), "S": 0.0,
                              "llr": [hit, miss]})
             cal[wid] = {"halluc_p0": round(p0, 5), "cusum_h": round(h, 2), "history_max_S": round(smax, 2),
                         "history_connected": n}
