@@ -21,31 +21,49 @@ PROBE_SHARE = 0.06         # per unknown number; sized so a bad probe stays unde
 WINDOW_HOURS = 3
 
 
-def assess(names, window, lifetime, prior: dict) -> dict:
-    """window/lifetime: arrays [n_dids, 2] of (dials, connected)."""
+def assess(names, hours, lifetime, prior: dict) -> dict:
+    """hours: [H, n_dids, 2] (dials, connected) per dialling hour, most recent LAST.
+    Each number is compared with its siblings over the same hours. The window starts
+    at WINDOW_HOURS and is extended (up to H) until the number has MIN_WINDOW_DIALS,
+    so low-volume probes get judged on enough data instead of being waved through.
+
+    Status transitions: unknown -> healthy only after a passed comparison
+    (ratio >= RATIO_FLAG); any -> flagged on a significant, material shortfall;
+    inconclusive keeps the previous status (probes stay probes)."""
+    import numpy as np
+    hours = np.asarray(hours)
+    H = len(hours)
     out = {}
     for i, d in enumerate(names):
-        dials, conn = int(window[i][0]), int(window[i][1])
         life = int(lifetime[i][0])
-        rec = {"window_dials": dials, "window_conn": conn, "lifetime_dials": life,
+        k = min(WINDOW_HOURS, H)
+        while k < H and hours[H - k:, i, 0].sum() < MIN_WINDOW_DIALS:
+            k += 1
+        win = hours[H - k:].sum(axis=0) if H else np.zeros((len(names), 2))
+        dials, conn = int(win[i][0]), int(win[i][1])
+        rec = {"window_dials": dials, "window_conn": conn, "window_hours": k, "lifetime_dials": life,
                "rate": conn / dials if dials else None}
         if prior.get(d) == "flagged":
             rec["status"] = "flagged"
             out[d] = rec
             continue
-        ref_d = sum(int(window[j][0]) for j in range(len(names))
-                    if j != i and prior.get(names[j]) != "flagged" and window[j][0] >= MIN_WINDOW_DIALS)
-        ref_c = sum(int(window[j][1]) for j in range(len(names))
-                    if j != i and prior.get(names[j]) != "flagged" and window[j][0] >= MIN_WINDOW_DIALS)
-        if life < MIN_LIFETIME_DIALS:
-            rec["status"] = "unknown"
-        elif dials >= MIN_WINDOW_DIALS and ref_d >= MIN_WINDOW_DIALS and ref_c > 0:
+        sib = [j for j in range(len(names)) if j != i and prior.get(names[j]) != "flagged"
+               and win[j][0] >= MIN_WINDOW_DIALS / 2]
+        ref_d = int(sum(win[j][0] for j in sib))
+        ref_c = int(sum(win[j][1] for j in sib))
+        was = prior.get(d) or ("unknown" if life < MIN_LIFETIME_DIALS else "healthy")
+        if dials >= MIN_WINDOW_DIALS and ref_d >= MIN_WINDOW_DIALS and ref_c > 0:
             z = stats.two_prop_z(conn, dials, ref_c, ref_d)
             ratio = (conn / dials) / (ref_c / ref_d)
             rec.update(z=round(z, 2), ratio=round(ratio, 3), ref_rate=round(ref_c / ref_d, 4))
-            rec["status"] = "flagged" if (ratio < RATIO_FLAG and z <= Z_FLAG) else "healthy"
+            if ratio < RATIO_FLAG and z <= Z_FLAG:
+                rec["status"] = "flagged"
+            elif ratio >= RATIO_FLAG:
+                rec["status"] = "healthy"
+            else:
+                rec["status"] = was
         else:
-            rec["status"] = prior.get(d) if prior.get(d) in ("healthy",) else "healthy"
+            rec["status"] = was
         out[d] = rec
     return out
 

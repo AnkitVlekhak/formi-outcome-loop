@@ -19,15 +19,26 @@ def _did_counts(rates, dials_per_hour, hours=6):
 def test_flags_degraded_did_but_not_healthy_ones():
     win = _did_counts([0.26, 0.26, 0.09], [100, 100, 100])
     life = win.sum(axis=0)
-    res = callerid.assess(["D1", "D2", "D3"], win.sum(axis=0), life, {})
+    res = callerid.assess(["D1", "D2", "D3"], win, life, {})
     assert res["D3"]["status"] == "flagged"
     assert res["D1"]["status"] == res["D2"]["status"] == "healthy"
 
 
 def test_unknown_did_until_enough_data():
     win = _did_counts([0.26, 0.26, 0.0], [100, 100, 0])
-    res = callerid.assess(["D1", "D2", "D3"], win.sum(axis=0), win.sum(axis=0), {})
+    res = callerid.assess(["D1", "D2", "D3"], win, win.sum(axis=0), {})
     assert res["D3"]["status"] == "unknown"
+
+
+def test_probe_graduates_only_after_a_passed_comparison():
+    """Regression (public_01): a 0.55-health probe with enough lifetime dials but an
+    inconclusive window must stay on probe, not jump to a full share."""
+    win = _did_counts([0.27, 0.27, 0.17], [130, 130, 18], hours=3)
+    res = callerid.assess(["D1", "D2", "D4"], win, np.array([[9000, 2400], [9000, 2400], [160, 28]]), {"D4": "unknown"})
+    assert res["D4"]["status"] == "unknown"
+    win = _did_counts([0.27, 0.27, 0.30], [130, 130, 18], hours=12)   # a good probe, given time
+    res = callerid.assess(["D1", "D2", "D3"], win, np.array([[9000, 2400], [9000, 2400], [216, 60]]), {"D3": "unknown"})
+    assert res["D3"]["status"] == "healthy"
 
 
 def test_target_allocation_spreads_load_and_probes_unknown():
@@ -42,7 +53,7 @@ def test_did_flag_false_positive_rate_on_in_control_data():
     fp = 0
     for _ in range(2000):
         win = _did_counts([0.26, 0.26, 0.26], [60, 60, 60], hours=3)
-        res = callerid.assess(["D1", "D2", "D3"], win.sum(axis=0), win.sum(axis=0) * 5, {})
+        res = callerid.assess(["D1", "D2", "D3"], win, win.sum(axis=0) * 5, {})
         fp += any(v["status"] == "flagged" for v in res.values())
     assert fp / 2000 < 0.005
 
@@ -127,6 +138,13 @@ def test_recent_window_veto_blocks_decaying_winner():
     acc = _acc([0.50, [0.66, 0.66, 0.66, 0.40]], [900, 400], days=4)
     res = experiments.look(acc, ["W1", "W2"], "W1", days_running=4, scope_mask=None)
     assert res["action"] != "promote"
+
+
+def test_recently_decaying_arm_is_dropped_even_if_cumulatively_ahead():
+    """Regression (public_01 W3): strong for 3 days, then below incumbent for 2 days."""
+    acc = _acc([0.55, [0.66, 0.66, 0.66, 0.47, 0.47]], [900, 300], days=5)
+    res = experiments.look(acc, ["W1", "W3"], "W1", days_running=5, scope_mask=None)
+    assert res["action"] == "ramp" and "W3" in res["dropped"]
 
 
 def test_decay_check_rolls_back_when_winner_fades():

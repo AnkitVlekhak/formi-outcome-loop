@@ -1,0 +1,55 @@
+[startup] history+catch-up ingested in 0.7s; sim at D0 00:00
+[D1 00:00] day done; credits=200.0 applied=7
+[D2 00:00] day done; credits=200.0 applied=7
+[D3 00:00] day done; credits=200.0 applied=7
+[D4 00:00] day done; credits=200.0 applied=9
+[D5 00:00] day done; credits=200.0 applied=11
+[D6 00:00] day done; credits=200.0 applied=13
+[D7 00:00] day done; credits=200.0 applied=14
+[D8 00:00] day done; credits=200.0 applied=17
+{
+  "proposals": {
+    "APPLIED": 17,
+    "REJECTED": 1
+  },
+  "incidents": [
+    [
+      "inc-nw_kyc-281827",
+      "FALSE_ALARM"
+    ]
+  ],
+  "experiments": [
+    [
+      "nw_renewal:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "nw_renewal:voice:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "nw_kyc:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "nw_kyc:voice:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "ks_cancel:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "ks_cancel:voice:1",
+      "MONITORING",
+      "V4"
+    ]
+  ],
+  "credits_spent": 0,
+  "last_chunk": 393
+}

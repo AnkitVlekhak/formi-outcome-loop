@@ -289,10 +289,10 @@ class Controller:
 
     # ================================================================== caller ID
     def _did_window(self, ws, now):
+        """Dialling hours of the last 24h, most recent last (assess() picks its own window)."""
         hi = self.state.hour_idx(now)
-        lo = max(0, hi - 24)
-        rows = [h for h in range(hi - 1, lo - 1, -1) if ws.did[h, :, 0].sum() > 0][: callerid.WINDOW_HOURS]
-        return ws.did[rows].sum(axis=0) if rows else np.zeros_like(ws.did[0])
+        rows = [h for h in range(max(0, hi - 24), hi) if ws.did[h, :, 0].sum() > 0]
+        return ws.did[rows] if rows else np.zeros((0,) + ws.did.shape[1:], dtype=ws.did.dtype)
 
     def _callerid(self, now):
         for wid, ws in self.state.wfs.items():

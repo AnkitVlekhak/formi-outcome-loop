@@ -83,8 +83,29 @@ def _recent_ok(acc, arms, a, incumbent, mask, day):
     return T[ia][2] / T[ia][1] - T[ii][2] / T[ii][1] >= 0
 
 
+Z_HARM_RECENT = -2.0
+RECENT_DAYS = 2
+
+
+def _recent_z(acc, arms, a, incumbent, mask, days_running):
+    lo = max(days_running - RECENT_DAYS, 0)
+    if days_running - lo < 1:
+        return None, 0
+    T = _tot(acc, mask, slice(lo, days_running))
+    ia, ii = arms.index(a), arms.index(incumbent)
+    if T[ia][1] < N_HARM or T[ii][1] < N_HARM:
+        return None, int(T[ia][1])
+    return stats.two_prop_z(T[ia][2], T[ia][1], T[ii][2], T[ii][1]), int(T[ia][1])
+
+
 def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=Z_WIN) -> dict:
+    """Harm is checked on the whole test AND on the last RECENT_DAYS, because a variant
+    can decay with exposure: cumulative numbers keep an early winner looking good."""
     st = arm_stats(acc, arms, incumbent, scope_mask, days_running)
+    for a in arms:
+        if a != incumbent:
+            zr, nr = _recent_z(acc, arms, a, incumbent, scope_mask, days_running) if days_running >= 3 else (None, 0)
+            st[a]["z_recent"] = None if zr is None else round(zr, 3)
     inc = st[incumbent]
     cands = []
     newly_dropped = []
@@ -92,7 +113,8 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
         if a == incumbent or a in dropped:
             continue
         s = st[a]
-        if s["conn"] >= N_HARM and inc["conn"] >= N_HARM and s["z"] <= Z_HARM:
+        if (s["conn"] >= N_HARM and inc["conn"] >= N_HARM and s["z"] <= Z_HARM) or \
+                (s.get("z_recent") is not None and s["z_recent"] <= Z_HARM_RECENT):
             newly_dropped.append(a)
             continue
         if (s["z"] >= z_win and s["conn"] >= N_MIN and inc["conn"] >= N_MIN and days_running >= MIN_DAYS
@@ -110,14 +132,16 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
         if a == incumbent or a in all_dropped:
             continue
         s = st[a]
-        alloc[a] = RAMP_SHARE if (s["conn"] >= N_HARM and s.get("z", 0) > 0) else CHALLENGER_SHARE
+        recent_ok = s.get("z_recent") is None or s["z_recent"] >= 0
+        alloc[a] = RAMP_SHARE if (s["conn"] >= N_HARM and s.get("z", 0) > 0 and recent_ok) else CHALLENGER_SHARE
     alloc = dict(list(alloc.items())[:MAX_CHALLENGERS])
     tot = sum(alloc.values())
     if tot > 0.6:
         alloc = {a: w * 0.6 / tot for a, w in alloc.items()}
     alloc[incumbent] = 1 - sum(alloc.values())
     return {"action": "ramp", "winner": None, "alloc": {a: round(w, 4) for a, w in alloc.items()},
-            "stats": st, "dropped": newly_dropped, "rule": f"harm stop z<={Z_HARM} at n>={N_HARM}"}
+            "stats": st, "dropped": newly_dropped,
+            "rule": f"harm stop z<={Z_HARM} (whole test) or z<={Z_HARM_RECENT} (last {RECENT_DAYS} days), n>={N_HARM}"}
 
 
 def cohort_split(acc, arms, incumbent, winner, cohorts, days_running) -> dict:
