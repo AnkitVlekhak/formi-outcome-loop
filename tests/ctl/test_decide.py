@@ -8,7 +8,7 @@ rng = np.random.default_rng(7)
 
 
 # ---------------------------------------------------------------- caller ID
-def _did_counts(rates, dials_per_hour, hours=6):
+def _did_counts(rates, dials_per_hour, hours=6, rng=rng):
     a = np.zeros((hours, len(rates), 2), dtype=np.int64)
     for h in range(hours):
         for d, (r, n) in enumerate(zip(rates, dials_per_hour)):
@@ -98,8 +98,9 @@ def test_schedule_declines_without_signal():
 
 
 # ---------------------------------------------------------------- experiments
-def _acc(rates, n_per_day, days, cells_used=(0,)):
-    """counts[day, arm, cell, (dials, conn, eng)]."""
+def _acc(rates, n_per_day, days, cells_used=(0,), seed=11):
+    """counts[day, arm, cell, (dials, conn, eng)]; own RNG so tests don't depend on run order."""
+    rng = np.random.default_rng(seed)
     a = np.zeros((16, len(rates), cells.N_CELLS, 3), dtype=np.int64)
     for d in range(days):
         for i, (r, n) in enumerate(zip(rates, n_per_day)):
@@ -147,16 +148,58 @@ def test_recently_decaying_arm_is_dropped_even_if_cumulatively_ahead():
     assert res["action"] == "ramp" and "W3" in res["dropped"]
 
 
-def test_decay_check_rolls_back_when_winner_fades():
-    acc = _acc([[0.55] * 6, [0.64, 0.64, 0.64, 0.64, 0.50, 0.50]], [110, 1000], days=6)
-    res = experiments.decay_check(acc, ["W1", "W3"], winner="W3", holdout="W1", promote_day=2, today=6)
-    assert res["rollback"] is True
+def test_bad_arm_dropped_within_three_days_at_dev_volume():
+    """Regression (public_02 V4=0.9x): ~100 connects/day at a 10% share must be enough to stop a -10% arm by day 3."""
+    hits = 0
+    for seed in range(40):
+        r = np.random.default_rng(seed)
+        acc = np.zeros((16, 2, cells.N_CELLS, 3), dtype=np.int64)
+        for d in range(3):
+            acc[d, 0, 0] = [2700, 900, r.binomial(900, 0.55)]
+            acc[d, 1, 0] = [300, 100, r.binomial(100, 0.495)]
+        hits += "V4" in experiments.look(acc, ["V1", "V4"], "V1", days_running=3)["dropped"]
+    assert hits / 40 >= 0.5
 
 
-def test_decay_check_quiet_when_stable():
-    acc = _acc([[0.55] * 6, [0.64] * 6], [110, 1000], days=6)
-    res = experiments.decay_check(acc, ["W1", "W3"], winner="W3", holdout="W1", promote_day=2, today=6)
-    assert res["rollback"] is False
+def test_no_ramp_when_lift_is_fading():
+    acc = _acc([0.55, [0.68, 0.68, 0.58, 0.58]], [900, 300], days=4)
+    res = experiments.look(acc, ["W1", "W3"], "W1", days_running=4)
+    assert res["alloc"].get("W3", 0) <= experiments.CHALLENGER_SHARE
+
+
+def _decay_acc(seed, w_rates, h_rate=0.55):
+    r = np.random.default_rng(seed)
+    a = np.zeros((16, 2, cells.N_CELLS, 3), dtype=np.int64)
+    for d, wr in enumerate(w_rates):   # days 0-1: exploration (incumbent ~70%), then 90/10 after promotion
+        nh, nw = (700, 150) if d < 2 else (110, 1000)
+        a[d, 0, 0] = [3 * nh, nh, r.binomial(nh, h_rate)]
+        a[d, 1, 0] = [3 * nw, nw, r.binomial(nw, wr)]
+    return a
+
+
+def _two_looks(acc_fn):
+    """The check runs every day: did either of two consecutive daily looks fire?"""
+    return any(experiments.decay_check(acc_fn(), ["W1", "W3"], "W3", "W1", 2, today)["rollback"] for today in (6, 7))
+
+
+def test_decay_check_power_and_false_rollback_rate():
+    """Eval over 40 seeds, two daily looks each: a winner that decays from 0.64 to 0.50 is
+    rolled back >=95% of the time; a stable winner <=5%; a global drop that hits every arm
+    (e.g. a prompt change) is not blamed on the winner (<=10%)."""
+    dec = sum(_two_looks(lambda: _decay_acc(s, [0.64] * 4 + [0.50] * 3)) for s in range(40))
+    stable = sum(_two_looks(lambda: _decay_acc(s, [0.64] * 7)) for s in range(40))
+
+    def glob_acc(seed):
+        r = np.random.default_rng(100 + seed)
+        a = np.zeros((16, 2, cells.N_CELLS, 3), dtype=np.int64)
+        for d in range(7):
+            f = 1.0 if d < 4 else 0.85
+            nh, nw = (700, 150) if d < 2 else (110, 1000)
+            a[d, 0, 0] = [3 * nh, nh, r.binomial(nh, 0.55 * f)]
+            a[d, 1, 0] = [3 * nw, nw, r.binomial(nw, 0.64 * f)]
+        return a
+    glob = sum(_two_looks(lambda: glob_acc(s)) for s in range(40))
+    assert dec >= 38 and stable <= 2 and glob <= 4, (dec, stable, glob)
 
 
 def test_cohort_level_protection_when_winner_hurts_a_cohort():

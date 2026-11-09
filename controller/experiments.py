@@ -13,7 +13,9 @@ Design
   >= 400 connected per arm, >= 2 days, last day not reversing, pickup guardrail ok.
   Bonferroni over 8 looks x 3 challengers bounds the family-wise false-winner
   rate at ~4.5% (verified by an A/A eval in tests).
-* Harm stop: z <= -1.5 with >= 300 connected removes the arm.
+* Harm stop: z <= -1.28 over the test or z <= -1.64 over the last 2 days (>= 200
+  connected) removes the arm. Promotion and ramp also need a stable lift (trend test),
+  because variants can decay with exposure (novelty effects).
 * Promotion keeps a 10% holdout on the old incumbent, so decay is measurable.
 * Decay: winner's own engagement now vs during the experiment (high power),
   confirmed by the holdout (difference-in-differences) so global drift (e.g. a
@@ -31,10 +33,10 @@ MAX_CHALLENGERS = 3
 HOLDOUT = 0.10
 Z_WIN = 2.9
 Z_WIN_COHORT = 3.2
-Z_HARM = -1.5
+Z_HARM = -1.28      # aggressive on purpose: dropping a neutral arm costs ~nothing, keeping a bad one costs engagement
 Z_PROTECT = -1.64
 N_MIN = 400
-N_HARM = 300
+N_HARM = 200
 MIN_DAYS = 2
 Z_PICKUP_GUARD = -2.33
 Z_DECAY = -3.0
@@ -83,7 +85,7 @@ def _recent_ok(acc, arms, a, incumbent, mask, day):
     return T[ia][2] / T[ia][1] - T[ii][2] / T[ii][1] >= 0
 
 
-Z_HARM_RECENT = -2.0
+Z_HARM_RECENT = -1.64
 RECENT_DAYS = 2
 
 
@@ -98,6 +100,23 @@ def _recent_z(acc, arms, a, incumbent, mask, days_running):
     return stats.two_prop_z(T[ia][2], T[ia][1], T[ii][2], T[ii][1]), int(T[ia][1])
 
 
+Z_TREND = -2.0
+
+
+def _trend_z(acc, arms, a, incumbent, mask, days_running):
+    """z of (recent lift - earlier lift): catches novelty effects that fade with exposure."""
+    lo = max(days_running - RECENT_DAYS, 1)
+    if days_running < 3:
+        return None
+    E, R = _tot(acc, mask, slice(0, lo)), _tot(acc, mask, slice(lo, days_running))
+    ia, ii = arms.index(a), arms.index(incumbent)
+    if min(E[ia][1], E[ii][1], R[ia][1], R[ii][1]) < 100:
+        return None
+    le, se_e = stats.diff_se(E[ia][2], E[ia][1], E[ii][2], E[ii][1])
+    lr, se_r = stats.diff_se(R[ia][2], R[ia][1], R[ii][2], R[ii][1])
+    return (lr - le) / (se_e ** 2 + se_r ** 2) ** 0.5
+
+
 def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=Z_WIN) -> dict:
     """Harm is checked on the whole test AND on the last RECENT_DAYS, because a variant
     can decay with exposure: cumulative numbers keep an early winner looking good."""
@@ -106,6 +125,8 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
         if a != incumbent:
             zr, nr = _recent_z(acc, arms, a, incumbent, scope_mask, days_running) if days_running >= 3 else (None, 0)
             st[a]["z_recent"] = None if zr is None else round(zr, 3)
+            zt = _trend_z(acc, arms, a, incumbent, scope_mask, days_running)
+            st[a]["z_trend"] = None if zt is None else round(zt, 3)
     inc = st[incumbent]
     cands = []
     newly_dropped = []
@@ -119,6 +140,7 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
             continue
         if (s["z"] >= z_win and s["conn"] >= N_MIN and inc["conn"] >= N_MIN and days_running >= MIN_DAYS
                 and s["z_pickup"] > Z_PICKUP_GUARD
+                and (s.get("z_trend") is None or s["z_trend"] > Z_TREND)
                 and _recent_ok(acc, arms, a, incumbent, scope_mask, days_running - 1)):
             cands.append(a)
     if cands:
@@ -132,7 +154,8 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
         if a == incumbent or a in all_dropped:
             continue
         s = st[a]
-        recent_ok = s.get("z_recent") is None or s["z_recent"] >= 0
+        recent_ok = (s.get("z_recent") is None or s["z_recent"] >= 0) and \
+            (s.get("z_trend") is None or s["z_trend"] > Z_TREND)
         alloc[a] = RAMP_SHARE if (s["conn"] >= N_HARM and s.get("z", 0) > 0 and recent_ok) else CHALLENGER_SHARE
     alloc = dict(list(alloc.items())[:MAX_CHALLENGERS])
     tot = sum(alloc.values())
@@ -183,7 +206,10 @@ def decay_check(acc, arms, winner, holdout, promote_day, today, mask=None) -> di
     dh = (R[ih][2] / R[ih][1] - E[ih][2] / E[ih][1]) if R[ih][1] and E[ih][1] else 0.0
     did = dw - dh
     z_vs_hold = stats.two_prop_z(R[iw][2], R[iw][1], R[ih][2], R[ih][1]) if R[ih][1] else 0.0
-    rollback = bool(z_within <= Z_DECAY and did <= 0.5 * dw and z_vs_hold < 1.0)
+    se_did = (stats.diff_se(R[iw][2], R[iw][1], E[iw][2], E[iw][1])[1] ** 2 +
+              (stats.diff_se(R[ih][2], R[ih][1], E[ih][2], E[ih][1])[1] ** 2 if R[ih][1] and E[ih][1] else 0)) ** 0.5
+    z_did = did / se_did if se_did else 0.0
+    rollback = bool(z_within <= Z_DECAY and z_did <= -1.64 and z_vs_hold < 1.0)
     return {"rollback": rollback, "z_within": round(z_within, 2), "winner_drop": round(dw, 4),
-            "holdout_drift": round(dh, 4), "diff_in_diff": round(did, 4), "z_vs_holdout_recent": round(z_vs_hold, 2),
-            "rule": f"z_within<={Z_DECAY} and DiD<=0.5*drop and winner no longer clearly ahead of holdout"}
+            "holdout_drift": round(dh, 4), "diff_in_diff": round(did, 4), "z_did": round(z_did, 2), "z_vs_holdout_recent": round(z_vs_hold, 2),
+            "rule": f"z_within<={Z_DECAY} and diff-in-diff z<=-1.64 and winner not clearly ahead of holdout"}
