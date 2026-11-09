@@ -10,7 +10,7 @@
 - **Results:**
   - public_01: business outcome **+12.8%**, 0 harmful changes.
   - public_02: business outcome **+27.3%**, 0 harmful changes. The bad prompt was fixed in **135 min** (detected 34 min after it shipped), and the flagged caller ID was off traffic within 2h 15m.
-  - public_03_load: **+20.5%**, 0 harmful of 76. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128 applied changes.
+  - public_03_load: **+20.6%**, 0 harmful of 76. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128 applied changes.
 - **Scale:** one simulated day of public_03_load takes **13.3 s** wall-clock against a 10-minute budget. Crash-safe under repeated SIGKILL.
 - **Not built:** per-person call time, cross-tenant fairness, a UI (there is a JSON supervisor view), and promoting winners across clients.
 
