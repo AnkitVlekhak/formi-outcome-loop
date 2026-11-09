@@ -271,7 +271,13 @@ class Store:
         self.conn.execute(
             "insert into config_versions values (?,?,?,?,?,?,?,?,?) on conflict(workflow_id, version) do update set "
             "config_json=coalesce(excluded.config_json, config_versions.config_json), "
-            "event_id=coalesce(excluded.event_id, config_versions.event_id)",
+            "event_id=coalesce(excluded.event_id, config_versions.event_id), "
+            "proposal_id=coalesce(excluded.proposal_id, config_versions.proposal_id), "
+            "approval_id=coalesce(excluded.approval_id, config_versions.approval_id), "
+            "actor=coalesce(excluded.actor, config_versions.actor), "
+            "changed_dims=case when excluded.changed_dims='[]' then config_versions.changed_dims "
+            "else excluded.changed_dims end, "
+            "sim_minute=coalesce(config_versions.sim_minute, excluded.sim_minute)",
             (wf, version, actor, _j(dims), pid, aid, minute, event_id, _j(config) if config else None))
 
     def config_versions(self, wf):

@@ -304,8 +304,9 @@ class Governance:
         self.store.update_proposal(pid, now, state="APPLIED", applied_version=version, decided_minute=now)
         self.store.set_intents(p["intent_ids"], "done", now)
         cfg = self.sim.config(wid)
-        self.store.upsert_config_version(wid, cfg["version"], cfg["actor"], [], cfg.get("proposal_id"), None, now,
-                                         None, cfg["config"])
+        if cfg["version"] == version:
+            self.store.upsert_config_version(wid, version, cfg["actor"], [], None, p.get("approval_id"), now,
+                                             None, cfg["config"])
         self.store.add_decision("applied", wid, now, pid, f"{p['route']} route", {"version": version,
                                 "decided_at": decided, "approved_by": actor}, "applied",
                                 {"proposal_id": pid, "approval_id": p.get("approval_id"), "version": version})
