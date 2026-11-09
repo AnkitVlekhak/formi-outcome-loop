@@ -8,10 +8,10 @@
 
 - **What it does:** an always-on controller ingests events into per-cell counters. It detects caller-ID degradation, hallucination spikes and KPI drift. It runs factorial welcome×voice experiments with deterministic stopping, holdouts and decay rollback, and fits per-cohort call-time weights from pre-D0 history. Every change goes out as one batched, evidenced proposal through approval or policy-permitted auto-apply.
 - **Results:**
-  - public_01: business outcome **+13.3%**, 0 harmful changes.
-  - public_02: business outcome **+27.6%**, 0 harmful changes. The bad prompt was fixed in **225 min** (detected 34 min after it shipped), and the flagged caller ID was off traffic within 2h 15m.
-  - Six hidden-like variants: mean **+20.8%**, 3 harmful out of 132 applied changes.
-- **Scale:** one simulated day of public_03_load takes **__LOAD_DAY__ s** wall-clock against a 10-minute budget. Crash-safe under repeated SIGKILL.
+  - public_01: business outcome **+12.8%**, 0 harmful changes.
+  - public_02: business outcome **+27.3%**, 0 harmful changes. The bad prompt was fixed in **135 min** (detected 34 min after it shipped), and the flagged caller ID was off traffic within 2h 15m.
+  - public_03_load: **+20.5%**, 0 harmful of 76. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128 applied changes.
+- **Scale:** one simulated day of public_03_load takes **13.3 s** wall-clock against a 10-minute budget. Crash-safe under repeated SIGKILL.
 - **Not built:** per-person call time, cross-tenant fairness, a UI (there is a JSON supervisor view), and promoting winners across clients.
 
 ## 1. Assumptions
@@ -80,7 +80,7 @@
   - Loop health in `/metrics`.
   - One load day in well under 10 minutes.
 - **Pushed back:** nothing material. The one dependency added is `orjson` (stateless; about 5× faster parsing on the hot path).
-- **Reply:** "Kabir — SQLite in WAL mode inside the process plus a snapshot file; no new servers. In prod it's your Postgres behind the same store class. SIGKILL test is in `reports/crash_test.md`: five kills, no lost or doubled approvals. One load day is __LOAD_DAY__s wall-clock on a laptop. At 10× the Python ingest loop is first to break; the fix is per-workflow shards (plan in §8). Pages only for lapsed approvals, credits, unresolvable incidents and controller bugs, each with what to look at."
+- **Reply:** "Kabir — SQLite in WAL mode inside the process plus a snapshot file; no new servers. In prod it's your Postgres behind the same store class. SIGKILL test is in `reports/crash_test.md`: repeated kills mid-run, no lost or doubled approvals. One load day is 13.3s wall-clock on a laptop. At 10× the Python ingest loop is first to break; the fix is per-workflow shards (plan in §8). Pages only for lapsed approvals, credits, unresolvable incidents and controller bugs, each with what to look at."
 
 ### 04 — Anita Desai, Ops Supervisor (Kestrel)
 - **Accepted:**
@@ -107,7 +107,7 @@
   - a wrong `lead_preferred_hour` multiplies weight by 0.25 in every other hour.
 
   The minimum cohort and window answers are in §5.
-- **Reply:** "Tara — cohort = a set of feature cells; detection, experiments and the supervisor view use the same ids. Minimum: 400 connected calls per arm and 2 days; that detects ~12% lifts in a week at dev volume with a ≤4.5% false-winner rate (measured, not assumed). Impact score = expected extra concluded leads/day, so ranking is meaningful. I cut per-person call time: most people get 2–8 attempts, and wrong per-person hours suppress them 4× elsewhere. Cohort-level timing already moves pickup +6–16%."
+- **Reply:** "Tara — cohort = a set of feature cells; detection, experiments and the supervisor view use the same ids. Minimum: 400 connected calls per arm and 2 days; once an arm is ramped to 20% that detects ~11% lifts (80% power) in a week at dev volume with a ≤4.5% false-winner rate (measured, not assumed). Impact score = expected extra concluded leads/day, so ranking is meaningful. I cut per-person call time: most people get 2–8 attempts, and wrong per-person hours suppress them 4× elsewhere. Cohort-level timing already moves pickup +6–16%."
 
 ### 06 — Aryamann, CTO
 - **Accepted:**
@@ -185,7 +185,7 @@
     | Stable winner | 0% |
     | Global drift with a known cause | ≤10% (test-asserted) |
 
-  - On public_01, decayed W3 was off traffic two days after promotion.
+  - On public_01, decaying W3 was never promoted. The novelty rule (lift trending down with no recent advantage) stopped it; its share after decay began went 20% → 7% → 0% by day 2.
 
 - **Call time and caller ID.**
   - **Call time:** per-cohort hour weights are the relative pickup advantage, shrunk (200 dials), clipped to [0.3, 3]. All window hours are kept positive. Dry-run replay on history predicts the pickup change.
@@ -217,7 +217,7 @@ auto:     STEPPING ─PUT ≤max_shift─► … ─► APPLIED;  live version m
   - Inside approver hours (and stakeholder hours).
   - Worst-case decision time before the TTL. Urgent changes use the best-case latency instead: an expiry costs one request, waiting overnight costs a day of harm.
   - Rolling 24h budget = policy (or stricter override) minus one slot reserved for incidents.
-  - Result: **0 lapsed and 0–1 expired across 8 scenarios.**
+  - Result: **0 lapsed across all 9 graded runs**; 2 expiries, both urgent best-case gambles that were resubmitted.
 - **Auto-apply:** used only when every changed dimension is allowed **and** no stakeholder rule needs a human. It is voluntarily *not* used for:
   - Northwind customer-facing dimensions;
   - anything touching a supervisor edit;
@@ -258,12 +258,24 @@ auto:     STEPPING ─PUT ≤max_shift─► … ─► APPLIED;  live version m
 | D3 11:30 | supervisor ships P2 → dimension locked, CUSUM watch mode |
 | D3 12:04 | CUSUM alarm |
 | D3 13:00 | confirmed (exact p = 3e-6 since the edit) → candidate P1 (own data, flag 1.5%, engagement 0.50) → validation 0.987 @ n=300 → proposal "REVERTS A SUPERVISOR EDIT (with evidence)" |
-| D3 15:15 | approved and applied (v10) — **MTTR 225 min** |
-| D3 19:00 | verified: flag rate back to baseline → RESOLVED |
+| D3 13:45 | approved and applied (v10) — **MTTR 135 min** |
+| D3 17:00 | verified: flag rate back to baseline → RESOLVED |
 
 ## 8. Scale (public_03_load, 12 workflows, ~800k events/day, M-series laptop)
 
-__LOAD_TABLE__
+| sim day | events | wall s (whole tick loop) | of which simulator advance | controller ingest | controller decide+govern | snapshot | ingest events/s |
+|---|---|---|---|---|---|---|---|
+| D0 | 840,053 | 12.6 | 6.3 | 5.0 | 1.07 | 0.3 | 168,823 |
+| D1 | 840,037 | 13.2 | 6.7 | 5.3 | 0.86 | 0.3 | 158,559 |
+| D2 | 840,041 | 13.6 | 6.9 | 5.5 | 0.94 | 0.3 | 153,841 |
+| D3 | 840,031 | 13.5 | 7.0 | 5.5 | 0.73 | 0.3 | 152,314 |
+| D4 | 840,025 | 13.5 | 7.0 | 5.6 | 0.65 | 0.3 | 150,689 |
+
+- **Wall-clock per simulated day: 13.3 s** (budget 600 s) — including the simulator's own compute.
+- Whole run incl. startup (7 history days ingested): 88 s · **peak RSS 686 MB** (budget 8 GB).
+- Decision lag per tick (detect+decide+govern after ingest): p50 11 ms, p99 67 ms, max 93 ms.
+- Tick (advance+ingest+decide) p50 0.23 s, max 1.22 s (max = 08:00 batch upload, 192k lead events in one tick).
+- Store after 5 days: ctl.db 187 MB (call_log 3,240,000 rows), snapshot 32 MB.
 
 **What breaks at 10× (8M events a day, 500k+ dials an hour):**
 1. **The Python per-event ingest loop.** It runs at about 150k events/s, i.e. ~1 min of CPU per 10× day. That's fine for throughput, but it's single-core and blocks decisions while it runs.
@@ -279,7 +291,31 @@ __LOAD_TABLE__
 
 ## 9. Reliability
 
-__CRASH__
+Scenario `scenarios/public_02_incidents.yaml`, 5 SIGKILLs at random wall-clock moments, then a final run to completion. Same `--state-dir` every time.
+
+```
+[12:27:57] kill 1: SIGKILL after 2.6s wall at sim 2027-01-06T09:15:00+05:30 (minute 3435)
+[12:28:00] kill 2: SIGKILL after 2.9s wall at sim 2027-01-09T13:45:00+05:30 (minute 8025)
+[12:28:03] kill 3: SIGKILL after 3.8s wall at sim 2027-01-13T18:30:00+05:30 (minute 14070)
+[12:28:06] run 4: controller exited before kill (rc=0)
+[12:28:06] final run: rc=0; resumed lines: [startup] resumed from snapshot at chunk 491; [startup] history+catch-up ingested in 0.0s; sim at D10 00:00
+```
+
+| check | result |
+|---|---|
+| scenario finished | PASS |
+| every simulator approval request maps to one proposal in our store | PASS |
+| no approval applied twice | PASS |
+| no proposal stuck in SUBMITTING | PASS |
+| no lapsed approvals | PASS |
+| auto-apply duplicates rejected by idempotency (none expected) | PASS |
+| every controller config version explained by the audit store | PASS |
+
+Approval requests: 14 · applied via approval: 12 · credits used: 3
+
+Grade of the crashed run: `reports/crash_public_02_incidents.md` (compare with the uninterrupted `reports/public_02_incidents.md`).
+
+**Overall: PASS**
 
 - **Idempotency keys:**
   - `proposal_id = ctl-<wf>-v<base>-<sha(target, intents)>`; auto steps are `<pid>.s<k>`.
@@ -297,15 +333,16 @@ __CRASH__
 `python -m controller why --state-dir state/public_02_incidents --wf ks_cancel --at "D3 16:00"` (abridged real output):
 
 ```json
-{ "live_version": 10, "actor": "controller_approved", "changed_at": "D3 15:15", "changed_dims": ["prompt_version"],
+{ "live_version": 10, "actor": "controller_approved", "changed_at": "D3 13:45", "changed_dims": ["prompt_version"],
   "answer": "REVERTS A SUPERVISOR EDIT (with evidence): switch prompt P2 -> P1: hallucination flags 9.0% vs baseline 1.5%",
-  "proposal_id": "ctl-ks_cancel-v9-7675a1f3124cc1ce", "route": "approval", "approval_id": "apr_00006",
+  "proposal_id": "ctl-ks_cancel-v9-b85046757e7c7377", "route": "approval", "approval_id": "apr_00006",
   "approved_by": "client approver (approval path)", "submitted_at": "D3 13:00",
   "impact_score": 0.9481, "affected_leads": 3641, "diff": {"prompt_version": {"from": "P2", "to": "P1"}},
-  "rationale": "[incident] CUSUM alarm confirmed (exact p=3.4e-06); candidate from own data (known-good prompts); validation pass rate 0.9867 on n=300 (decision a5cff76afe7b1267bba3)",
+  "rationale": "[incident] CUSUM alarm confirmed (exact p=3.4e-06); candidate from own data (known-good prompts); validation pass rate 0.9867 on n=300 (decision d375622c60848cfeb318)",
   "evidence_decisions": [{"kind": "incident_fix", "at": "D3 13:00", "rule": "known-good prompt first, then LLM; validated before proposing", ...}],
-  "lifecycle": [{"kind": "submit", "at": "D3 13:00"}, {"kind": "applied", "at": "D3 15:15"}, {"kind": "post_apply", "at": "D4 15:00"}],
-  "what_happened_next": [{"24h_before": {"halluc_flag_rate": ...}, "24h_after": {...}}] }
+  "lifecycle": [{"kind": "submit", "at": "D3 13:00"}, {"kind": "applied", "at": "D3 13:45"}, {"kind": "post_apply", "at": "D4 14:00"}],
+  "what_happened_next": [{"24h_before": {"halluc_flag_rate": 0.0238, "engagement": 0.4926, "pickup": 0.2537},
+                          "24h_after":  {"halluc_flag_rate": 0.0186, "engagement": 0.5,    "pickup": 0.2585}}] }
 ```
 
 - **Page on:**
@@ -323,7 +360,67 @@ __CRASH__
 
 ## 11. Results
 
-__RESULTS__
+### public_01 (dev)
+
+| workflow | conclusion rate | Δ | pickup | Δ | engagement | Δ | engagement gap captured | hallucinated calls (base) |
+|---|---|---|---|---|---|---|---|---|
+| ks_cancel | 0.383 | +12.1% | 0.259 | +5.7% | 0.518 | +5.4% | 23% | 62 (57) |
+| nw_kyc | 0.449 | +22.5% | 0.290 | +19.8% | 0.605 | +1.4% | 7% | 31 (21) |
+| nw_renewal | 0.450 | +8.1% | 0.278 | +5.4% | 0.551 | +1.7% | 9% | 44 (54) |
+| ALL | 0.419 | +12.8% | 0.271 | +8.2% | 0.548 | +3.4% | 14% | 137 (132) |
+
+23 applied — neutral: 10, beneficial: 13
+
+### public_02 (incidents)
+
+| workflow | conclusion rate | Δ | pickup | Δ | engagement | Δ | engagement gap captured | hallucinated calls (base) |
+|---|---|---|---|---|---|---|---|---|
+| ks_cancel | 0.360 | +53.0% | 0.249 | +37.5% | 0.494 | +5.6% | 35% | 76 (348) |
+| nw_kyc | 0.453 | +21.3% | 0.282 | +20.1% | 0.605 | -0.5% | -4% | 38 (29) |
+| nw_renewal | 0.483 | +11.5% | 0.290 | +10.6% | 0.554 | -0.1% | 13% | 53 (54) |
+| ALL | 0.421 | +27.3% | 0.270 | +22.8% | 0.539 | +1.1% | 24% | 167 (431) |
+
+25 applied — beneficial: 11, neutral: 14
+
+Prompt incident MTTR 135 min (fixed by `controller_approved`); flagged caller-ID share: 8% on the flag day, 0% after; credits used 3.
+
+### public_03 (load) — all 12 workflows
+
+| workflow | conclusion rate | Δ | pickup | Δ | engagement | Δ | engagement gap captured | hallucinated calls (base) |
+|---|---|---|---|---|---|---|---|---|
+| ALL | 0.442 | +20.6% | 0.271 | +12.6% | 0.571 | +4.7% | 25% | 5188 (4667) |
+
+76 applied — neutral: 26, beneficial: 50
+
+### Robustness eval — 6 hidden-like variants (re-drawn truth, `reports/eval_variants.md`)
+
+| scenario | conclusion Δ | applied | harmful | beneficial | requests | rejected | expired | lapsed | prompt MTTR (min) | flagged DID share next day | decaying-variant share, last day | credits | wall s |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| variant_001 | +24.1% | 25 | 0 | 13 | 14 | 1 | 1 | 0 | [1485] | [0.0] | {} | 3 | 7.5 |
+| variant_002 | +20.3% | 17 | 0 | 12 | 13 | 3 | 0 | 0 | [1305] | [0.0] | {} | 13 | 7.3 |
+| variant_003 | +24.3% | 21 | 1 | 9 | 11 | 1 | 0 | 0 | [2805] | [0.577] | {} | 3 | 7.6 |
+| variant_004 | +13.5% | 20 | 0 | 11 | 13 | 1 | 0 | 0 | [1530] | [0.0] | {'nw_kyc:voice=V2': 0.11, 'nw_kyc:welcome_message=W2': 0.098} | 3 | 7.6 |
+| variant_005 | +18.9% | 25 | 1 | 8 | 13 | 1 | 1 | 0 | [1275] | [0.0] | {'nw_renewal:welcome_message=W2': 0.0} | 3 | 9.1 |
+| variant_006 | +22.0% | 20 | 0 | 15 | 11 | 1 | 0 | 0 | [2805] | [0.0] | {'nw_renewal:voice=V4': 0.0} | 13 | 9.0 |
+
+**Mean conclusion Δ +20.5%** · harmful changes 2 of 128 applied · lapsed 0 · expired 2
+
+**Interpretation.**
+- **Where we helped:**
+  - **Pickup:** caller-ID spreading plus cohort call-timing drives most of the lift. KYC workflows gain the most because their default dials everything from one number.
+  - **Incident response:** hallucinated calls on public_02 fell from 431 to under 200.
+  - **Engagement:** gains on the cancellation and renewal flows come from experiments that concluded (load) or harm-stopped bad arms (dev).
+- **Where we were harmful:**
+  - No harmful change on the public scenarios.
+  - Variants: 2 of 128, both exploration bundles that put 10% on arms that turned out bad.
+- **Where we were slow:**
+  - Prompt fixes on low-volume KYC (2,805 min in the slowest variant): detection of a mild ~2× flag-rate shift and KYC's 2-requests/day budget.
+  - Flagged caller IDs on KYC keep dialling old campaigns (`next_campaign_only`).
+- **Engagement as a guardrail:**
+  - KYC engagement moved within ±2.3% relative on all runs, i.e. well within the 0.02 absolute guardrail.
+  - public_02 `nw_renewal` engagement −0.6%, while its pickup rose 8% and conclusions 8%.
+- **What I'd change next:** start challengers at 5% with harm-gated ramp-up to cut exploration harm, and pre-commit a prompt-rollback path for KYC so it doesn't compete for the 2-request budget.
+
 
 ## 12. Trade-offs & rejected alternatives
 

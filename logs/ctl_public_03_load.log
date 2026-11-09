@@ -1,0 +1,147 @@
+[startup] history+catch-up ingested in 21.5s; sim at D0 00:00
+[D1 00:00] day done; credits=400.0 applied=23
+[D2 00:00] day done; credits=400.0 applied=35
+[D3 00:00] day done; credits=400.0 applied=46
+[D4 00:00] day done; credits=400.0 applied=54
+[D5 00:00] day done; credits=400.0 applied=60
+{
+  "proposals": {
+    "APPLIED": 60,
+    "REJECTED": 5,
+    "STALE": 6
+  },
+  "incidents": [
+    [
+      "inc-kest_kyc_1-6045692",
+      "FALSE_ALARM"
+    ],
+    [
+      "inc-tide_cancel_2-6744767",
+      "FALSE_ALARM"
+    ]
+  ],
+  "experiments": [
+    [
+      "nort_renewal_0:welcome_message:1",
+      "MONITORING",
+      "W3"
+    ],
+    [
+      "nort_renewal_0:voice:1",
+      "MONITORING",
+      "V3"
+    ],
+    [
+      "nort_kyc_1:welcome_message:1",
+      "MONITORING",
+      "W2"
+    ],
+    [
+      "nort_kyc_1:voice:1",
+      "MONITORING",
+      "V2"
+    ],
+    [
+      "nort_cancel_2:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "nort_cancel_2:voice:1",
+      "MONITORING",
+      "V4"
+    ],
+    [
+      "kest_renewal_0:welcome_message:1",
+      "MONITORING",
+      "W3"
+    ],
+    [
+      "kest_renewal_0:voice:1",
+      "MONITORING",
+      "V3"
+    ],
+    [
+      "kest_kyc_1:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "kest_kyc_1:voice:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "kest_cancel_2:welcome_message:1",
+      "MONITORING",
+      "W2"
+    ],
+    [
+      "kest_cancel_2:voice:1",
+      "MONITORING",
+      "V4"
+    ],
+    [
+      "arav_renewal_0:welcome_message:1",
+      "MONITORING",
+      "W3"
+    ],
+    [
+      "arav_renewal_0:voice:1",
+      "MONITORING",
+      "V3"
+    ],
+    [
+      "arav_kyc_1:welcome_message:1",
+      "MONITORING",
+      "W2"
+    ],
+    [
+      "arav_kyc_1:voice:1",
+      "MONITORING",
+      "V2"
+    ],
+    [
+      "arav_cancel_2:welcome_message:1",
+      "MONITORING",
+      "W2"
+    ],
+    [
+      "arav_cancel_2:voice:1",
+      "MONITORING",
+      "V4"
+    ],
+    [
+      "tide_renewal_0:welcome_message:1",
+      "MONITORING",
+      "W3"
+    ],
+    [
+      "tide_renewal_0:voice:1",
+      "MONITORING",
+      "V3"
+    ],
+    [
+      "tide_kyc_1:welcome_message:1",
+      "MONITORING",
+      "W2"
+    ],
+    [
+      "tide_kyc_1:voice:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "tide_cancel_2:welcome_message:1",
+      "RUNNING",
+      null
+    ],
+    [
+      "tide_cancel_2:voice:1",
+      "MONITORING",
+      "V4"
+    ]
+  ],
+  "credits_spent": 0,
+  "last_chunk": 269
+}
