@@ -22,6 +22,26 @@ def validation_verdict(pass_rate: float, n: int, min_rate: float, escalated: boo
     return "fail"
 
 
+def confirm_p(flags: int, conn: int, p0: float) -> float:
+    """Exact one-sided binomial tail P(X >= flags | conn, p0). Normal approximations
+    overstate significance at the small counts we see per workflow-hour."""
+    import math
+    if conn <= 0 or flags <= 0:
+        return 1.0
+    lp0, lq0 = math.log(p0), math.log1p(-p0)
+    tail = 0.0
+    for k in range(flags, conn + 1):
+        lpmf = math.lgamma(conn + 1) - math.lgamma(k + 1) - math.lgamma(conn - k + 1) + k * lp0 + (conn - k) * lq0
+        term = math.exp(lpmf)
+        tail += term
+        if term < 1e-15 * max(tail, 1e-300) and k > conn * p0:
+            break
+    return min(tail, 1.0)
+
+
+CONFIRM_P = 1e-3
+
+
 def known_good(prompts, prompt_counts, p0: float, exclude=()) -> list[dict]:
     """prompt_counts: [P, 3] = connected, engaged, flagged summed over our own data."""
     out = []

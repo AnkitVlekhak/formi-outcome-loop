@@ -19,6 +19,7 @@ RATIO_FLAG = 0.80          # effect size: >=20% worse pickup than siblings
 Z_FLAG = -3.5              # significance: ~2e-4 one-sided per number per look
 PROBE_SHARE = 0.06         # per unknown number; sized so a bad probe stays under the 2% harm line
 WINDOW_HOURS = 3
+Z_GRADUATE = 1.64          # a probe graduates only when confidently above 0.8x its siblings
 
 
 def assess(names, hours, lifetime, prior: dict) -> dict:
@@ -36,8 +37,13 @@ def assess(names, hours, lifetime, prior: dict) -> dict:
     out = {}
     for i, d in enumerate(names):
         life = int(lifetime[i][0])
+        others = [j for j in range(len(names)) if j != i and prior.get(names[j]) != "flagged"]
+
+        def enough(k):
+            w = hours[H - k:]
+            return w[:, i, 0].sum() >= MIN_WINDOW_DIALS and w[:, others, 0].sum() >= MIN_WINDOW_DIALS
         k = min(WINDOW_HOURS, H)
-        while k < H and hours[H - k:, i, 0].sum() < MIN_WINDOW_DIALS:
+        while k < H and not enough(k):     # grow until BOTH the number and its reference have enough dials
             k += 1
         win = hours[H - k:].sum(axis=0) if H else np.zeros((len(names), 2))
         dials, conn = int(win[i][0]), int(win[i][1])
@@ -47,19 +53,20 @@ def assess(names, hours, lifetime, prior: dict) -> dict:
             rec["status"] = "flagged"
             out[d] = rec
             continue
-        sib = [j for j in range(len(names)) if j != i and prior.get(names[j]) != "flagged"
-               and win[j][0] >= MIN_WINDOW_DIALS / 2]
-        ref_d = int(sum(win[j][0] for j in sib))
-        ref_c = int(sum(win[j][1] for j in sib))
+        ref_d = int(sum(win[j][0] for j in others))
+        ref_c = int(sum(win[j][1] for j in others))
         was = prior.get(d) or ("unknown" if life < MIN_LIFETIME_DIALS else "healthy")
         if dials >= MIN_WINDOW_DIALS and ref_d >= MIN_WINDOW_DIALS and ref_c > 0:
             z = stats.two_prop_z(conn, dials, ref_c, ref_d)
             ratio = (conn / dials) / (ref_c / ref_d)
-            rec.update(z=round(z, 2), ratio=round(ratio, 3), ref_rate=round(ref_c / ref_d, 4))
+            p, q = conn / dials, ref_c / ref_d
+            se = (p * (1 - p) / dials + RATIO_FLAG ** 2 * q * (1 - q) / ref_d) ** 0.5
+            z80 = (p - RATIO_FLAG * q) / se if se else 0.0      # one-sided: is it confidently above 0.8x?
+            rec.update(z=round(z, 2), ratio=round(ratio, 3), ref_rate=round(q, 4), z_vs_0_8=round(z80, 2))
             if ratio < RATIO_FLAG and z <= Z_FLAG:
                 rec["status"] = "flagged"
-            elif ratio >= RATIO_FLAG:
-                rec["status"] = "healthy"
+            elif was == "unknown":
+                rec["status"] = "healthy" if z80 >= Z_GRADUATE else "unknown"
             else:
                 rec["status"] = was
         else:

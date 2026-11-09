@@ -162,3 +162,10 @@ def test_reconcile_adopts_approval_posted_before_crash(sim01, tmp_path):
     assert p["state"] == "PENDING" and p["approval_id"].startswith("apr_")
     g2.poll(now)   # must not double-submit
     assert len(sim01.approvals("nw_renewal")) == 1
+
+
+def test_urgent_gate_uses_median_latency(sim01, tmp_path):
+    """variant_001: an incident at 17:00 on a 12h-TTL workflow should not wait for tomorrow."""
+    g = Governance(sim01, Store(tmp_path / "g.db"), _infos(sim01))
+    assert g.gate("ks_cancel", 17 * 60)[0] is False
+    assert g.gate("ks_cancel", 17 * 60, urgent=True)[0] is True

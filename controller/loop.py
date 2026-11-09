@@ -24,7 +24,6 @@ from .timeutil import MIN_PER_DAY, day_of, hour_of, minute_to_label
 
 DECISION_HOUR = 9          # daily looks happen at 09:00, before approvers start
 SNAPSHOT_EVERY = 60
-CONFIRM_Z = 3.09           # incident confirmation: one-sided p < 1e-3 over the last 3h
 ESC = {"RESOLVED", "FALSE_ALARM", "ESCALATED", "CLOSED"}
 
 
@@ -485,10 +484,12 @@ class Controller:
         for wid, ws in self.state.wfs.items():
             c = ws.cusum
             open_ = [i for i in self.store.incidents(wid) if i["state"] not in ESC]
-            for al in c["alarms"]:
+            seen = set(self.store.meta_get(f"alarms_seen:{wid}", []))
+            fresh = [al for al in c["alarms"] if al["event_id"] not in seen]
+            if fresh:
+                self.store.meta_set(f"alarms_seen:{wid}", sorted(seen | {al["event_id"] for al in fresh}))
+            for al in fresh:
                 iid = f"inc-{wid}-{al['event_id']}"
-                if any(i["incident_id"] == iid for i in self.store.incidents(wid)):
-                    continue
                 if open_:
                     o = open_[0]
                     o["evidence"].setdefault("extra_alarms", []).append(al)
@@ -516,23 +517,31 @@ class Controller:
         P = ws.opt["prompt_version"]
         totals = ws.prompt.sum(axis=0)
         if st == "DETECTED":
-            conn, flags = self._window_rate(ws, now)
-            z = stats.two_prop_z(flags, conn, p0 * 100000, 100000) if conn else 0
-            recent_prompt_change = any(e["minute"] >= now - 2 * MIN_PER_DAY and "prompt_version" in e["dims"]
-                                       for e in ws.config_events)
+            changes = [e["minute"] for e in ws.config_events
+                       if e["minute"] >= now - 2 * MIN_PER_DAY and "prompt_version" in e["dims"]]
+            recent_prompt_change = bool(changes)
+            # confirm over the window since the suspected change point (the latest prompt change if
+            # recent), never less than 3h — CUSUM's own estimate of where the shift began
+            since = max(changes) if changes else None
+            if since is not None and self.state.hour_idx(now) - self.state.hour_idx(since) < 3:
+                since = None
+            conn, flags = self._window_rate(ws, now, since=since)
+            pval = incidents.confirm_p(flags, conn, p0)
             cur_i = P.index(cur_prompt)
             cur_rate = totals[cur_i][2] / max(totals[cur_i][0], 1)
-            inc["evidence"].update({"confirm_window_conn": conn, "confirm_window_flags": flags, "confirm_z": round(z, 2),
+            inc["evidence"].update({"confirm_window_conn": conn, "confirm_window_flags": flags,
+                                    "confirm_p": pval, "confirm_window_since": since,
                                     "current_prompt": cur_prompt, "recent_prompt_change": recent_prompt_change,
                                     "current_prompt_flag_rate": round(cur_rate, 4)})
             if conn < 100:
                 self.store.upsert_incident(inc, now)
                 return
-            if z < CONFIRM_Z:
+            if pval >= incidents.CONFIRM_P:
                 inc["state"] = "FALSE_ALARM"
                 self.store.upsert_incident(inc, now)
                 self.store.add_decision("incident_close", wid, now, inc["incident_id"],
-                                        f"not confirmed: 3h binomial z<{CONFIRM_Z}", inc["evidence"], "false_alarm")
+                                        f"not confirmed: exact binomial tail p>={incidents.CONFIRM_P} over the "
+                                        f"change window", inc["evidence"], "false_alarm")
                 return
             if not (recent_prompt_change or cur_rate >= 2 * p0):
                 inc["state"] = "ESCALATED"
@@ -606,7 +615,7 @@ class Controller:
                                   {"op": "prompt", "prompt_version": inc["candidate"]},
                                   {"summary": f"switch prompt {cur_prompt} -> {inc['candidate']}: hallucination flags "
                                               f"{cur_rate:.1%} vs baseline {p0:.1%}",
-                                   "rationale": f"CUSUM alarm confirmed (z={inc['evidence'].get('confirm_z')}); "
+                                   "rationale": f"CUSUM alarm confirmed (exact p={inc['evidence'].get('confirm_p'):.1e}); "
                                                 f"candidate from {inc['evidence'].get('candidate_source')}; "
                                                 f"validation pass rate {r['pass_rate']} on n={r['n']}",
                                    "dry_run": {"candidate_observed_flag_rate": round(

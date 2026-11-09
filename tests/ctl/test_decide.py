@@ -238,3 +238,35 @@ def test_known_good_prompts_ranked_by_engagement():
     prompt[2] = [100, 60, 1]       # too little data
     good = incidents.known_good(["P1", "P2", "P3"], prompt, p0=0.015, exclude={"P2"})
     assert [g["prompt"] for g in good] == ["P1"]
+
+
+# ---------------------------------------------------------------- regressions from the variant eval
+def test_noisy_probe_does_not_graduate_on_a_point_estimate():
+    """variant_001: a 0.6-health probe read 0.93x on 128 dials and got a full share."""
+    hours = np.zeros((3, 3, 2), dtype=np.int64)
+    hours[:, 0] = [150, 40]; hours[:, 1] = [150, 38]; hours[:, 2] = [43, 11]   # probe ~0.95x on 129 dials
+    res = callerid.assess(["D1", "D2", "D3"], hours, np.array([[9000, 2400], [9000, 2300], [160, 40]]),
+                          {"D3": "unknown"})
+    assert res["D3"]["status"] == "unknown"
+
+
+def test_high_volume_number_compared_against_low_volume_probes():
+    """variant_003: KYC D1 at 88% degraded; siblings are 6% probes. The window must grow
+    until the reference has enough dials, then flag D1."""
+    hours = np.zeros((8, 3, 2), dtype=np.int64)
+    for h in range(8):
+        hours[h, 0] = [176, 15]    # degraded: 0.085
+        hours[h, 1] = [12, 5]      # 0.42
+        hours[h, 2] = [12, 4]
+    res = callerid.assess(["D1", "D2", "D3"], hours, np.array([[20000, 4000], [200, 80], [200, 70]]),
+                          {"D2": "unknown", "D3": "unknown"})
+    assert res["D1"]["status"] == "flagged"
+
+
+def test_incident_confirmation_is_an_exact_tail_over_the_change_window():
+    """variant_003: 3h at KYC volume (6/106 vs p0=1.75%) is only p~0.01 by the exact tail, so
+    confirmation must use the window since the suspected change (here, the prompt edit)."""
+    assert 0.005 < incidents.confirm_p(6, 106, 0.0175) < 0.02
+    assert incidents.confirm_p(13, 210, 0.0175) < 1e-3        # since the prompt edit
+    assert incidents.confirm_p(16, 314, 0.0147) < 1e-4
+    assert incidents.confirm_p(3, 200, 0.015) > 0.05

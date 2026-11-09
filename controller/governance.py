@@ -63,11 +63,13 @@ class Governance:
         mod = now % MIN_PER_DAY
         if not start * 60 <= mod < hi * 60:
             return False, f"outside submission hours [{start},{hi})"
-        lat_max = g["approver_latency_minutes"][1]
+        lo_lat, hi_lat = g["approver_latency_minutes"]
+        # urgent fixes accept a small expiry risk (median latency); routine changes use the worst case
+        lat = (lo_lat + hi_lat) // 2 if urgent else hi_lat
         ttl = g["proposal_ttl_hours"] * 60
-        worst = next_working(now + lat_max, g["approver_hours"])
+        worst = next_working(now + lat, g["approver_hours"])
         if worst > now + ttl:
-            return False, f"worst-case decision {worst - now}min after submit exceeds TTL {ttl}min"
+            return False, f"{'median' if urgent else 'worst-case'} decision {worst - now}min after submit exceeds TTL {ttl}min"
         used = self.store.approvals_submitted_since(wid, now - MIN_PER_DAY)
         lim = self.request_limit(wid)
         budget = lim if urgent else max(lim - 1, 1) if lim >= 2 else lim
