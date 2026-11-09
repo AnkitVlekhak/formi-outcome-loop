@@ -1,39 +1,39 @@
-[startup] history+catch-up ingested in 0.7s; sim at D0 00:00
+[startup] history+catch-up ingested in 0.8s; sim at D0 00:00
 [D1 00:00] day done; credits=200.0 applied=6
 [D2 00:00] day done; credits=200.0 applied=8
-[D3 00:00] day done; credits=200.0 applied=9
-[D4 00:00] day done; credits=197.0 applied=11
-[D5 00:00] day done; credits=197.0 applied=13
-[D6 00:00] day done; credits=197.0 applied=14
-[D7 00:00] day done; credits=197.0 applied=14
-[D8 00:00] day done; credits=197.0 applied=17
-[D9 00:00] day done; credits=197.0 applied=18
-[D10 00:00] day done; credits=197.0 applied=19
+[D3 00:00] day done; credits=200.0 applied=10
+[D4 00:00] day done; credits=197.0 applied=13
+[D5 00:00] day done; credits=197.0 applied=15
+[D6 00:00] day done; credits=197.0 applied=17
+[D7 00:00] day done; credits=197.0 applied=18
+[D8 00:00] day done; credits=197.0 applied=20
+[D9 00:00] day done; credits=197.0 applied=23
+[D10 00:00] day done; credits=197.0 applied=23
 {
   "proposals": {
-    "APPLIED": 19,
-    "REJECTED": 4,
-    "STALE": 1
+    "APPLIED": 23,
+    "PENDING": 1,
+    "REJECTED": 4
   },
   "incidents": [
     [
-      "inc-ks_cancel-234371",
+      "inc-ks_cancel-234350",
       "FALSE_ALARM"
     ],
     [
-      "inc-ks_cancel-235928",
+      "inc-ks_cancel-234577",
+      "FALSE_ALARM"
+    ],
+    [
+      "inc-ks_cancel-235515",
+      "FALSE_ALARM"
+    ],
+    [
+      "inc-ks_cancel-236784",
       "RESOLVED"
     ],
     [
-      "inc-ks_cancel-236373",
-      "FALSE_ALARM"
-    ],
-    [
-      "inc-ks_cancel-237246",
-      "FALSE_ALARM"
-    ],
-    [
-      "inc-ks_cancel-237776",
+      "inc-ks_cancel-238428",
       "FALSE_ALARM"
     ]
   ],

@@ -177,9 +177,10 @@ def _decay_acc(seed, w_rates, h_rate=0.55):
     return a
 
 
-def _two_looks(acc_fn):
+def _two_looks(acc_fn, global_change=False, days=(6, 7)):
     """The check runs every day: did either of two consecutive daily looks fire?"""
-    return any(experiments.decay_check(acc_fn(), ["W1", "W3"], "W3", "W1", 2, today)["rollback"] for today in (6, 7))
+    return any(experiments.decay_check(acc_fn(), ["W1", "W3"], "W3", "W1", 2, today, global_change=global_change)
+               ["rollback"] for today in days)
 
 
 def test_decay_check_power_and_false_rollback_rate():
@@ -198,8 +199,13 @@ def test_decay_check_power_and_false_rollback_rate():
             a[d, 0, 0] = [3 * nh, nh, r.binomial(nh, 0.55 * f)]
             a[d, 1, 0] = [3 * nw, nw, r.binomial(nw, 0.64 * f)]
         return a
-    glob = sum(_two_looks(lambda: glob_acc(s)) for s in range(40))
-    assert dec >= 38 and stable <= 2 and glob <= 4, (dec, stable, glob)
+    glob = sum(_two_looks(lambda: glob_acc(s), global_change=True) for s in range(40))
+    # regression (public_01): winner decays to just below the incumbent (1.16x -> 0.96x), no global change
+    small = sum(_two_looks(lambda: _decay_acc(s, [0.64] * 4 + [0.53] * 3)) for s in range(40))
+    # ...but a winner that fades yet stays AHEAD of the incumbent must be kept (rolling back would hurt)
+    ahead = sum(_two_looks(lambda: _decay_acc(s, [0.64] * 4 + [0.60] * 3)) for s in range(40))
+    assert ahead <= 8, ahead
+    assert dec >= 38 and stable <= 2 and glob <= 4 and small >= 28, (dec, stable, glob, small)
 
 
 def test_cohort_level_protection_when_winner_hurts_a_cohort():

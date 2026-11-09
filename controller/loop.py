@@ -441,7 +441,9 @@ class Controller:
                     continue
                 mask = default_mask if scope == "default" else dict(cells.cohort_masks(cohorts)).get(scope)
                 pd = s["promote_day"] - day_of(x["start_minute"])
-                dc = experiments.decay_check(acc, arms, s["winner"], inc, pd, k, mask)
+                glob = any(e["minute"] >= x["start_minute"] and ("prompt_version" in e["dims"] or e["actor"] == "supervisor")
+                           for e in ws.config_events)
+                dc = experiments.decay_check(acc, arms, s["winner"], inc, pd, k, mask, global_change=glob)
                 self.store.add_decision("decay_check", wid, now, f"{x['exp_id']}:{scope}", dc.get("rule", ""), dc,
                                         "rollback" if dc["rollback"] else "ok", {"exp_id": x["exp_id"]})
                 if dc["rollback"]:

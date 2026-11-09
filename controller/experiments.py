@@ -191,8 +191,17 @@ def cohort_split(acc, arms, incumbent, winner, cohorts, days_running) -> dict:
     return out
 
 
-def decay_check(acc, arms, winner, holdout, promote_day, today, mask=None) -> dict:
-    """promote_day/today are experiment-relative day indices; uses full days only."""
+Z_WITHIN_ALONE = -2.58
+
+
+def decay_check(acc, arms, winner, holdout, promote_day, today, mask=None, global_change=False) -> dict:
+    """promote_day/today are experiment-relative day indices; uses full days only.
+
+    The holdout exists to rule out global drift. Global drift in this system has observable
+    causes (a prompt change, a supervisor edit), recorded in our store. Without one, a
+    significant drop of the winner against its own test-period level is enough; with one,
+    the holdout must confirm (difference-in-differences). A winner significantly worse than
+    its concurrent holdout is rolled back regardless."""
     if today - promote_day < 1:
         return {"rollback": False, "reason": "not enough post-promotion data"}
     exp_days = slice(0, max(promote_day, 1))
@@ -209,7 +218,12 @@ def decay_check(acc, arms, winner, holdout, promote_day, today, mask=None) -> di
     se_did = (stats.diff_se(R[iw][2], R[iw][1], E[iw][2], E[iw][1])[1] ** 2 +
               (stats.diff_se(R[ih][2], R[ih][1], E[ih][2], E[ih][1])[1] ** 2 if R[ih][1] and E[ih][1] else 0)) ** 0.5
     z_did = did / se_did if se_did else 0.0
-    rollback = bool(z_within <= Z_DECAY and z_did <= -1.64 and z_vs_hold < 1.0)
+    rollback = bool(z_vs_hold < 0.5 and (
+        (z_within <= Z_DECAY and z_did <= -1.64) or
+        (z_within <= Z_WITHIN_ALONE and not global_change) or
+        z_vs_hold <= -1.96))
     return {"rollback": rollback, "z_within": round(z_within, 2), "winner_drop": round(dw, 4),
             "holdout_drift": round(dh, 4), "diff_in_diff": round(did, 4), "z_did": round(z_did, 2), "z_vs_holdout_recent": round(z_vs_hold, 2),
-            "rule": f"z_within<={Z_DECAY} and diff-in-diff z<=-1.64 and winner not clearly ahead of holdout"}
+            "global_change": global_change,
+            "rule": f"winner not ahead of holdout and (within z<={Z_WITHIN_ALONE} with no prompt/supervisor change, "
+                    f"or within z<={Z_DECAY} and DiD z<=-1.64, or concurrent z vs holdout<=-1.96)"}
