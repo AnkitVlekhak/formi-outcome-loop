@@ -100,7 +100,9 @@ def _recent_z(acc, arms, a, incumbent, mask, days_running):
     return stats.two_prop_z(T[ia][2], T[ia][1], T[ii][2], T[ii][1]), int(T[ia][1])
 
 
-Z_TREND = -2.0
+Z_TREND = -2.0        # promotion blocked if the lift is significantly fading
+Z_RAMP_TREND = -1.0   # no ramp-up while the lift trends down
+Z_FADE = -1.64        # novelty effect: fading lift and no recent advantage left -> stop the arm
 
 
 def _trend_z(acc, arms, a, incumbent, mask, days_running):
@@ -134,8 +136,10 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
         if a == incumbent or a in dropped:
             continue
         s = st[a]
+        fading = (s.get("z_trend") is not None and s["z_trend"] <= Z_FADE
+                  and (s.get("z_recent") is None or s["z_recent"] <= 1.0))
         if (s["conn"] >= N_HARM and inc["conn"] >= N_HARM and s["z"] <= Z_HARM) or \
-                (s.get("z_recent") is not None and s["z_recent"] <= Z_HARM_RECENT):
+                (s.get("z_recent") is not None and s["z_recent"] <= Z_HARM_RECENT) or fading:
             newly_dropped.append(a)
             continue
         if (s["z"] >= z_win and s["conn"] >= N_MIN and inc["conn"] >= N_MIN and days_running >= MIN_DAYS
@@ -155,7 +159,7 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
             continue
         s = st[a]
         recent_ok = (s.get("z_recent") is None or s["z_recent"] >= 0) and \
-            (s.get("z_trend") is None or s["z_trend"] > Z_TREND)
+            (s.get("z_trend") is None or s["z_trend"] > Z_RAMP_TREND)
         alloc[a] = RAMP_SHARE if (s["conn"] >= N_HARM and s.get("z", 0) > 0 and recent_ok) else CHALLENGER_SHARE
     alloc = dict(list(alloc.items())[:MAX_CHALLENGERS])
     tot = sum(alloc.values())
@@ -164,7 +168,8 @@ def look(acc, arms, incumbent, days_running, scope_mask=None, dropped=(), z_win=
     alloc[incumbent] = 1 - sum(alloc.values())
     return {"action": "ramp", "winner": None, "alloc": {a: round(w, 4) for a, w in alloc.items()},
             "stats": st, "dropped": newly_dropped,
-            "rule": f"harm stop z<={Z_HARM} (whole test) or z<={Z_HARM_RECENT} (last {RECENT_DAYS} days), n>={N_HARM}"}
+            "rule": f"harm stop z<={Z_HARM} (whole test) or z<={Z_HARM_RECENT} (last {RECENT_DAYS} days), n>={N_HARM}; "
+                    f"novelty stop: trend z<={Z_FADE} with no recent advantage"}
 
 
 def cohort_split(acc, arms, incumbent, winner, cohorts, days_running) -> dict:

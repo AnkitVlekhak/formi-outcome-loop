@@ -19,7 +19,7 @@ import json
 
 from . import cells, configops
 
-IMPACT_HALF = 25.0   # impact = x / (x + 25): x = expected extra primary-KPI successes per day
+IMPACT_HALF = 25.0   # impact = x / (x + 25); x = expected extra concluded leads/day (incidents: 5 per avoided hallucinated call)
 
 
 def merge(live: dict, intents: list[dict], locks: set) -> tuple[dict, list[dict], list[dict]]:
@@ -113,7 +113,10 @@ def request(wid: str, info: dict, live_version: int, live: dict, target: dict, i
                            for i in intents)
     dry = {f"{i['kind']}:{i['subject']}": i["evidence"].get("dry_run", {"note": "no replay available"})
            for i in intents}
-    dry["_combined"] = {"expected_extra_primary_successes_per_day": round(gain, 2),
+    dry["_combined"] = {"value_per_day": round(gain, 2),
+                        "value_unit": "extra concluded leads per day; an incident fix counts each avoided "
+                                      "hallucinated call as 5",
+                        "impact_score_formula": f"value / (value + {IMPACT_HALF:g})",
                         "objective": info["objective"]}
     body = {"proposal_id": pid, "workflow_id": wid, "base_version": live_version, "proposed_config": target,
             "change_summary": summary[:400] or "controller change", "diff": configops.diff(live, target) or

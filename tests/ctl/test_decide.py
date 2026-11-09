@@ -270,3 +270,19 @@ def test_incident_confirmation_is_an_exact_tail_over_the_change_window():
     assert incidents.confirm_p(13, 210, 0.0175) < 1e-3        # since the prompt edit
     assert incidents.confirm_p(16, 314, 0.0147) < 1e-4
     assert incidents.confirm_p(3, 200, 0.015) > 0.05
+
+
+def test_fading_novelty_arm_is_dropped_once_its_lift_is_gone():
+    """public_01 rerun: W3 decayed (1.15x -> 0.93x) but never looked significantly *worse* at dev volume;
+    its fading trend (z_trend ~ -1.8) with no recent advantage must stop it instead of ramping it."""
+    acc = _acc([0.55, [0.65, 0.65, 0.65, 0.55, 0.55]], [900, 300], days=5, seed=3)
+    res = experiments.look(acc, ["W1", "W3"], "W1", days_running=5)
+    assert "W3" in res["dropped"], res["stats"]["W3"]
+
+
+def test_steady_winner_is_not_dropped_by_the_fading_rule():
+    hits = 0
+    for seed in range(30):
+        acc = _acc([0.55, 0.62], [900, 300], days=5, seed=seed)
+        hits += "W2" in experiments.look(acc, ["W1", "W2"], "W1", days_running=5)["dropped"]
+    assert hits <= 2
