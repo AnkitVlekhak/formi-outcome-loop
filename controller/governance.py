@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 
-from . import builder, configops
+from . import builder, configops, crashpoint
 from .simclient import SimError
 from .timeutil import MIN_PER_DAY, hour_of, next_working
 
@@ -171,6 +171,7 @@ class Governance:
         wid = body["workflow_id"]
         try:
             a = self.sim.post("/approvals", body)
+            crashpoint.hit("approval_posted")
         except SimError as e:
             if e.code == "duplicate_proposal_id":
                 return self._adopt(pid, wid, now)
@@ -248,6 +249,7 @@ class Governance:
             self.store.update_proposal(pid, now, state="APPROVED", reasons=a.get("reasons") or [])
             try:
                 r = self.sim.post(f"/workflows/{wid}/apply", {"approval_id": p["approval_id"]})
+                crashpoint.hit("apply_posted")
             except SimError as e:
                 if e.status == 410:
                     self.store.alert(now, "page", wid, f"approval {p['approval_id']} lapsed before apply",
@@ -286,6 +288,7 @@ class Governance:
                 "rationale": p["request"]["rationale"], "evidence": p["request"]["evidence"]}
         try:
             r = self.sim.put(f"/workflows/{wid}/config", body)
+            crashpoint.hit("auto_step_put")
         except SimError as e:
             if e.code == "duplicate_proposal_id":       # step landed before a crash
                 hist = self.sim.config_history(wid)

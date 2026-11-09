@@ -17,7 +17,7 @@ Full local loop for one scenario (baseline, serve, controller, grade): `scripts/
 | Command | What it is for |
 |---|---|
 | `make test` / `.venv/bin/python -m pytest` | 61 controller tests + simulator smoke tests (~25 s) |
-| `scripts/crash_test.py --kills 5` | SIGKILL/restart test, writes `reports/crash_test.md` |
+| `scripts/crash_test.py --kills 3` | SIGKILL/restart test: 6 targeted crash points (`controller/crashpoint.py`) then random kills; writes `reports/crash_test.md` |
 | `python evals/make_variants.py --n 6 && python evals/run_evals.py evals/scenarios/*.yaml` | hidden-like robustness eval → `reports/eval_variants.md` |
 | `python -m controller why --wf ks_cancel --at "D3 16:00"` | why is this config live, who approved it, what happened next |
 | `python -m controller heard --wf nw_kyc --lead 123` | what a customer heard on each call and why it was live (IRDAI question) |
@@ -40,6 +40,8 @@ On start the controller:
    - A `SUBMITTING` proposal whose POST landed is adopted.
    - An auto rollout's completed steps are counted.
 4. Only then resumes ticking.
+
+**Reproducing a crash by hand:** `CTL_CRASH_AT=apply_posted ./run.sh <SIM_URL>` kills the controller right after an approved change lands on the simulator, before the store records it. Run `./run.sh <SIM_URL>` again to watch it recover. Point names and their meanings are listed in `controller/crashpoint.py`. Add `CTL_CRASH_NTH=n` to crash on the n-th hit instead of the first.
 
 **What is lost on SIGKILL:** at most one hour of aggregates, which are rebuilt by replay. An LLM or validation call that was in flight may be re-run; that costs credits, and the `credits` table marks it `reserved` with no result. Nothing else.
 

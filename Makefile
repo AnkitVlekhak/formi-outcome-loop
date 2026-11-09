@@ -13,7 +13,7 @@ test:
 run:        ## serve SCENARIO, run the controller against it, grade vs baseline
 	scripts/run_scenario.sh $(SCENARIO)
 crash:      ## SIGKILL/restart test on public_02
-	.venv/bin/python scripts/crash_test.py --scenario scenarios/public_02_incidents.yaml --kills 5
+	.venv/bin/python scripts/crash_test.py --scenario scenarios/public_02_incidents.yaml --kills 3
 eval:       ## hidden-like robustness eval (6 re-drawn truths)
 	.venv/bin/python evals/make_variants.py --n 6 && .venv/bin/python evals/run_evals.py evals/scenarios/*.yaml
 load:       ## public_03 load test + report

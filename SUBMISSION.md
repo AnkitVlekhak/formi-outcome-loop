@@ -11,7 +11,7 @@
   - public_01: business outcome **+12.8%**, 0 harmful changes.
   - public_02: business outcome **+27.3%**, 0 harmful changes. The bad prompt was fixed in **135 min** (detected 34 min after it shipped), and the flagged caller ID was off traffic within 2h 15m.
   - public_03_load: **+20.6%**, 0 harmful of 76. Six hidden-like variants: mean **+20.5%**, 2 harmful of 128 applied changes.
-- **Scale:** one simulated day of public_03_load takes **13.3 s** wall-clock against a 10-minute budget. Crash-safe under repeated SIGKILL.
+- **Scale:** one simulated day of public_03_load takes **13.3 s** wall-clock against a 10-minute budget. Crash-safe under SIGKILL at 6 targeted points and at random moments.
 - **Not built:** per-person call time, cross-tenant fairness, a UI (there is a JSON supervisor view), and promoting winners across clients.
 
 ## 1. Assumptions
@@ -42,7 +42,7 @@
 | C10 | Impact / affected leads / dry runs | **Built** | Dry run replays history (schedule) or arm posteriors (experiments) | Off-policy replay with importance weights |
 | C11 | Supervisor view | **Partial** | JSON `GET /supervisor/{tenant}`, one screen per tenant | Minimal UI over that endpoint |
 | C12 | Audit store | **Built** | `ctl why` / `ctl heard`; every decision stored with inputs and rule | — |
-| C13 | Crash recovery | **Built** | Snapshot + replay + reconciliation; SIGKILL test | — |
+| C13 | Crash recovery | **Built** | Snapshot + replay + reconciliation; SIGKILL test at 6 named crash points + random kills | Idempotency key on validation runs (needs an API change) |
 | C14 | Loop observability | **Partial** | `metrics` table / `GET /metrics`, alert table with runbook text | Prometheus exporter |
 | C15 | Fair credits / attention across tenants | **Cut** | Credits were never the binding constraint (≤13 per scenario) | Per-tenant credit buckets + request quota |
 
@@ -80,7 +80,7 @@
   - Loop health in `/metrics`.
   - One load day in well under 10 minutes.
 - **Pushed back:** nothing material. The one dependency added is `orjson` (stateless; about 5× faster parsing on the hot path).
-- **Reply:** "Kabir — SQLite in WAL mode inside the process plus a snapshot file; no new servers. In prod it's your Postgres behind the same store class. SIGKILL test is in `reports/crash_test.md`: repeated kills mid-run, no lost or doubled approvals. One load day is 13.3s wall-clock on a laptop. At 10× the Python ingest loop is first to break; the fix is per-workflow shards (plan in §8). Pages only for lapsed approvals, credits, unresolvable incidents and controller bugs, each with what to look at."
+- **Reply:** "Kabir — SQLite in WAL mode inside the process plus a snapshot file; no new servers. In prod it's your Postgres behind the same store class. SIGKILL test is in `reports/crash_test.md`: kills at the 6 worst moments (e.g. after an apply, before we record it) plus random ones; no lost or doubled approvals. One load day is 13.3s wall-clock on a laptop. At 10× the Python ingest loop is first to break; the fix is per-workflow shards (plan in §8). Pages only for lapsed approvals, credits, unresolvable incidents and controller bugs, each with what to look at."
 
 ### 04 — Anita Desai, Ops Supervisor (Kestrel)
 - **Accepted:**
@@ -291,31 +291,34 @@ auto:     STEPPING ─PUT ≤max_shift─► … ─► APPLIED;  live version m
 
 ## 9. Reliability
 
-Scenario `scenarios/public_02_incidents.yaml`, 5 SIGKILLs at random wall-clock moments, then a final run to completion. Same `--state-dir` every time.
+**Method** (`make crash`, full output in `reports/crash_test.md`): one public_02 run, one `--state-dir`, killed 8 times, then run to completion.
+- **6 targeted kills.** `controller/crashpoint.py` has named crash points at the moments where a crash is most dangerous: the simulator has accepted a side effect, but our store hasn't recorded it yet. With `CTL_CRASH_AT=<point>` set, the controller SIGKILLs itself there. When the variable isn't set, the hook does nothing.
+- **2 random kills** from outside, at random wall-clock moments (a third attempt found the run already finished).
 
-```
-[12:27:57] kill 1: SIGKILL after 2.6s wall at sim 2027-01-06T09:15:00+05:30 (minute 3435)
-[12:28:00] kill 2: SIGKILL after 2.9s wall at sim 2027-01-09T13:45:00+05:30 (minute 8025)
-[12:28:03] kill 3: SIGKILL after 3.8s wall at sim 2027-01-13T18:30:00+05:30 (minute 14070)
-[12:28:06] run 4: controller exited before kill (rc=0)
-[12:28:06] final run: rc=0; resumed lines: [startup] resumed from snapshot at chunk 491; [startup] history+catch-up ingested in 0.0s; sim at D10 00:00
-```
+| crash point (sim time of the kill) | what is half-done | how restart recovers |
+|---|---|---|
+| `chunk_ingested` (D1 11:00) | counters updated in memory, chunk not committed | resume from the last hourly snapshot and replay later chunks; `call_log` is `insert or ignore` on `event_id` |
+| `snapshot_tmp_written` (D1 13:00) | new snapshot fsynced as `.tmp`, not renamed | `os.replace` is atomic, so the previous snapshot is intact; replay from it |
+| `auto_step_put` (D1 16:00) | auto-apply `PUT` accepted, step not recorded | `reconcile()` finds `<pid>.s<k>` in the config history and restores the step count. A retried `PUT` gets 409 duplicate, which is adopted |
+| `approval_posted` (D3 10:00) | approval request accepted, proposal still `SUBMITTING` | `reconcile()` finds the approval by `proposal_id` and moves it to `PENDING`. Nothing is re-submitted |
+| `apply_posted` (D3 12:45) | approved change applied, store still says `APPROVED` | the next poll sees status `applied`, reads the version from the config history and records it. Nothing is re-applied |
+| `validation_spent` (D3 13:00) | validation paid for, result not recorded | the credit row stays `reserved` and the run is repeated: **3 credits re-spent** (known weakness 7) |
 
 | check | result |
 |---|---|
 | scenario finished | PASS |
-| every simulator approval request maps to one proposal in our store | PASS |
-| no approval applied twice | PASS |
-| no proposal stuck in SUBMITTING | PASS |
-| no lapsed approvals | PASS |
-| auto-apply duplicates rejected by idempotency (none expected) | PASS |
+| every simulator approval request maps to exactly one proposal in our store | PASS |
+| no approval applied twice · none stuck in `SUBMITTING` · none lapsed | PASS |
+| no auto-apply duplicates | PASS |
 | every controller config version explained by the audit store | PASS |
+| all 6 crash points fired | PASS |
 
-Approval requests: 14 · applied via approval: 12 · credits used: 3
+**Cost of the 8 crashes vs the uninterrupted run:**
+- Approvals: 14 requests and 12 applied, the same as the uninterrupted run.
+- Bad-prompt fix: 150 minutes vs 135, because the validation crash landed mid-incident.
+- Credits: 6 vs 3, which is the re-spent validation run.
 
-Grade of the crashed run: `reports/crash_public_02_incidents.md` (compare with the uninterrupted `reports/public_02_incidents.md`).
-
-**Overall: PASS**
+Grade of the crashed run: `reports/crash_public_02_incidents.md`.
 
 - **Idempotency keys:**
   - `proposal_id = ctl-<wf>-v<base>-<sha(target, intents)>`; auto steps are `<pid>.s<k>`.
@@ -326,7 +329,7 @@ Grade of the crashed run: `reports/crash_public_02_incidents.md` (compare with t
   - 5xx and transport errors: retry with backoff.
   - `/sim/advance`: never blindly retried; re-read state first.
   - 409 duplicate → adopt. 409 stale → rebuild. 410 → re-propose and page. 403 → re-route to approval. 402 → freeze spend and page. 422 → drop and page.
-- **Lost on crash:** at most one hour of aggregates, rebuilt by replay. An in-flight LLM/validation call may be repeated (marked `reserved` in `credits`).
+- **Lost on crash:** at most one hour of aggregates, rebuilt by replay. An in-flight LLM/validation call is repeated and paid for again (the row stays `reserved` in `credits`). The crash test shows this happening.
 
 ## 10. Audit & observability
 

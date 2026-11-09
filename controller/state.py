@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import cells
+from . import cells, crashpoint
 
 DAY_OFF = 30          # supports up to 30 history days before D0
 MAX_EXP_DAYS = 16     # experiment accumulator horizon (days since start)
@@ -130,6 +130,7 @@ class State:
             np.savez(f, **arrays)
             f.flush()
             os.fsync(f.fileno())
+        crashpoint.hit("snapshot_tmp_written")
         os.replace(tmp, path)
 
     @classmethod

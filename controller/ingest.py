@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover - orjson is in requirements, json is the
     import json as _json
     _loads = _json.loads
 
-from . import cells
+from . import cells, crashpoint
 from .state import MAX_EXP_DAYS, State
 from .store import Store
 from .timeutil import FastTs
@@ -132,6 +132,7 @@ class Ingestor:
             elif t == "campaign_created":
                 ws.campaign_version[ev["campaign_id"]] = ev["config_version_at_creation"]
         self._flush(buf)
+        crashpoint.hit("chunk_ingested")
         with self.store.tx():
             if call_rows:
                 self.store.conn.executemany("insert or ignore into call_log values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import callerid, cells, configops, experiments, incidents, schedule, stats
+from . import callerid, cells, configops, crashpoint, experiments, incidents, schedule, stats
 from .governance import Governance
 from .ingest import Ingestor
 from .simclient import SimClient, SimError
@@ -666,6 +666,8 @@ class Controller:
         self.store.credit(op, wid, kind, cost, "reserved", now)
         try:
             r = fn()
+            if kind == "validation":
+                crashpoint.hit("validation_spent")
         except SimError as e:
             self.store.credit(op, wid, kind, cost, "failed", now, {"error": str(e)})
             if e.status == 402:
